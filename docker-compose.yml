@@ -1,0 +1,15 @@
+# Local development: PostgreSQL only. API + web run on the host via `pnpm dev`.
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: handsal
+      POSTGRES_USER: handsal
+      POSTGRES_PASSWORD: handsal_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

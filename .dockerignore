@@ -1,0 +1,12 @@
+node_modules
+.git
+*.log
+.env
+.env.local
+.turbo
+dist
+apps/web/dist
+apps/api/dist
+packages/db/dist
+packages/shared/dist
+.seed-credentials
