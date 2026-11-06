@@ -9,6 +9,7 @@ vi.mock("../utils/security-logger.js", async (importOriginal) => ({
   logSecurityEvent: mockLogSecurityEvent,
 }));
 
+import { ServiceOverloadError } from "../utils/crypto.js";
 import { ApiError, errorHandler, OAuthError } from "./error-handler.js";
 
 const app = new Hono();
@@ -32,6 +33,12 @@ app.get("/api", () => {
 app.get("/zod", (c) => c.json(z.object({ name: z.string() }).parse({})));
 app.get("/http", () => {
   throw new HTTPException(418, { message: "teapot" });
+});
+app.get("/t/acme/oauth/token", () => {
+  throw new ServiceOverloadError();
+});
+app.get("/api/busy", () => {
+  throw new ServiceOverloadError();
 });
 app.get("/boom", () => {
   throw new Error("boom");
@@ -94,6 +101,21 @@ describe("errorHandler", () => {
     const res = await app.request("/http");
     expect(res.status).toBe(418);
     expect(await res.text()).toBe("teapot");
+  });
+
+  it("maps ServiceOverloadError to 503 with Retry-After (OAuth body under /t, API body elsewhere)", async () => {
+    const oauth = await app.request("/t/acme/oauth/token");
+    expect(oauth.status).toBe(503);
+    expect(oauth.headers.get("Retry-After")).toBe("1");
+    expect(oauth.headers.get("Cache-Control")).toBe("no-store");
+    expect(await oauth.json()).toEqual({
+      error: "temporarily_unavailable",
+      error_description: "Server is busy, retry shortly",
+    });
+    const api = await app.request("/api/busy");
+    expect(api.status).toBe(503);
+    expect(api.headers.get("Retry-After")).toBe("1");
+    expect((await api.json()).error).toBe("service_unavailable");
   });
 
   it("maps unknown errors to 500 server_error without leaking the message", async () => {

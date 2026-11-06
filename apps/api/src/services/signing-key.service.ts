@@ -94,13 +94,22 @@ export async function ensureActiveKey(
 
 /** The key new tokens are signed with (created on first use). Never a retiring key. */
 export async function getActiveKey(tenantId: string): Promise<ActiveSigningKey> {
-  const { kid } = await ensureActiveKey(tenantId);
-  const [row] = await db
-    .select({ privateKeyEnc: signingKeys.privateKeyEnc })
-    .from(signingKeys)
-    .where(and(eq(signingKeys.tenantId, tenantId), eq(signingKeys.kid, kid)));
+  // kid + private key in one statement: a rotation between two reads could hand back a retiring key.
+  const selectActive = () =>
+    db
+      .select({ kid: signingKeys.kid, privateKeyEnc: signingKeys.privateKeyEnc })
+      .from(signingKeys)
+      .where(and(eq(signingKeys.tenantId, tenantId), eq(signingKeys.status, "active")));
+  let [row] = await selectActive();
+  if (!row) {
+    await ensureActiveKey(tenantId);
+    [row] = await selectActive();
+  }
   if (!row) throw new Error("Active signing key disappeared");
-  return { kid, privateKeyPem: decryptPrivateKey(row.privateKeyEnc, env.KEY_ENCRYPTION_SECRET) };
+  return {
+    kid: row.kid,
+    privateKeyPem: decryptPrivateKey(row.privateKeyEnc, env.KEY_ENCRYPTION_SECRET),
+  };
 }
 
 /** All keys of the tenant (any status), newest first. Public material only. */

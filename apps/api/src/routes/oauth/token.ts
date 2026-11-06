@@ -18,9 +18,16 @@ const WINDOW_MS = 60_000;
 /** Parse a form-encoded body once into `c.var.formBody` (read by `clientIdKey` and the handler). */
 export const parseFormBody: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (isFormUrlEncoded(c.req.header("content-type"))) {
-    const raw = await c.req.parseBody();
+    const raw = await c.req.parseBody({ all: true });
     const body: Record<string, string> = {};
     for (const [key, value] of Object.entries(raw)) {
+      // Repeated parameters are rejected rather than collapsed to one value (RFC 6749 §3.2).
+      if (Array.isArray(value)) {
+        if (key === "resource") {
+          throw new OAuthError(OAUTH_ERRORS.INVALID_TARGET, 400, "resource must not be repeated");
+        }
+        throw invalidRequest("Parameters must not be repeated");
+      }
       if (typeof value === "string") body[key] = value;
     }
     c.set("formBody", body);
@@ -110,8 +117,13 @@ export function createTokenRoutes({
           sourceIp,
         ));
 
-        if (!body.resource) {
-          const err = new OAuthError(OAUTH_ERRORS.INVALID_TARGET, 400, "resource is required");
+        // A missing or malformed resource is invalid_target, not a generic schema failure.
+        if (!tokenRequestSchema.shape.resource.safeParse(body.resource).success) {
+          const err = new OAuthError(
+            OAUTH_ERRORS.INVALID_TARGET,
+            400,
+            body.resource ? "resource is invalid" : "resource is required",
+          );
           err.reason = "invalid_target";
           throw err;
         }

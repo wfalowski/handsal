@@ -200,13 +200,34 @@ describe("POST /t/:slug/oauth/introspect", () => {
     expect(await isActive(tenant.slug, token, callerAuth)).toBe(true);
   });
 
-  it("returns 404 when introspection is disabled, before client auth", async () => {
-    const { tenant } = await setup({ tenant: { introspectionEnabled: false } });
-    const res = await formRequest(app, `/t/${tenant.slug}/oauth/introspect`, { token: "x" });
+  it("returns 404 when introspection is disabled, after client auth", async () => {
+    const { tenant, callerAuth } = await setup({ tenant: { introspectionEnabled: false } });
+    const res = await introspect(tenant.slug, "x", callerAuth);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({
       error: "invalid_request",
       error_description: "introspection disabled",
+    });
+  });
+
+  it("returns 401 (not 404) to unauthenticated callers when introspection is disabled", async () => {
+    const { tenant } = await setup({ tenant: { introspectionEnabled: false } });
+    const res = await formRequest(app, `/t/${tenant.slug}/oauth/introspect`, { token: "x" });
+    expect(res.status).toBe(401);
+    expect((await res.json()).error).toBe("invalid_client");
+  });
+
+  it("rejects repeated form parameters", async () => {
+    const { tenant, callerAuth } = await setup();
+    const res = await app.request(`/t/${tenant.slug}/oauth/introspect`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", ...callerAuth },
+      body: "token=a&token=b",
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "invalid_request",
+      error_description: "Parameters must not be repeated",
     });
   });
 

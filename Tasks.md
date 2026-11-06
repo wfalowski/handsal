@@ -374,6 +374,7 @@ Each task gets its own migration (`00NN_*.sql`) and a short design note in `docs
 ### Non-agent backlog (unscheduled)
 
 Opaque tokens (introspection-only format) · custom issuer domains per tenant · admin SSO (OIDC) · password reset · Redis store for rate limits (multi-replica) · CSV export of token events · "Introspect a token" admin tool · p95 latency tile · audit log of admin actions · enterprise license + feature flags.
+`CREATE INDEX CONCURRENTLY` migrations once tables grow · `unsupported_token_type` for unknown `token_type_hint` on revoke
 
 ---
 

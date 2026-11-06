@@ -181,6 +181,20 @@ describe("applications CRUD", () => {
     expect(bad.status).toBe(400);
   });
 
+  it("empty PATCH → 200 with the row unchanged", async () => {
+    const { tenant, admin, base } = await setup();
+    const { application } = await createApplication(tenant.id, { description: "old" });
+    const res = await req("PATCH", `${base}/${application.id}`, admin.headers, {});
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      id: application.id,
+      name: application.name,
+      description: "old",
+    });
+    const [row] = await db.select().from(applications).where(eq(applications.id, application.id));
+    expect(row?.updatedAt.toISOString()).toBe(application.updatedAt);
+  });
+
   it("DELETE → 204, then 404", async () => {
     const { tenant, admin, base } = await setup();
     const { application } = await createApplication(tenant.id);

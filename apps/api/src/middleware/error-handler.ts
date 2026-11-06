@@ -2,6 +2,7 @@ import { OAUTH_ERRORS } from "@handsal/shared";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError, z } from "zod";
+import { ServiceOverloadError } from "../utils/crypto.js";
 import { createLogger } from "../utils/logger.js";
 import {
   extractRequestInfo,
@@ -98,6 +99,13 @@ export function errorHandler(err: Error, c: Context): Response {
 
   if (err instanceof HTTPException) {
     return err.getResponse();
+  }
+
+  if (err instanceof ServiceOverloadError) {
+    c.header("Retry-After", "1");
+    c.header("Cache-Control", "no-store");
+    const error = c.req.path.startsWith("/t/") ? "temporarily_unavailable" : "service_unavailable";
+    return c.json({ error, error_description: "Server is busy, retry shortly" }, 503);
   }
 
   logger.error({ err, requestId: c.get("requestId") }, "Unhandled error");

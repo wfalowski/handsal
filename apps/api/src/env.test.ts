@@ -138,15 +138,16 @@ describe("productionEnvSchema", () => {
   });
 
   it("rejects the .env.example BOOTSTRAP_ADMIN_PASSWORD placeholder in production", () => {
-    expect(KNOWN_PLACEHOLDER_SECRETS.has("change-me")).toBe(true);
+    expect(KNOWN_PLACEHOLDER_SECRETS.has("change-me-before-first-start")).toBe(true);
+    // Long enough for min(12), so this fails on the placeholder check alone.
     expect(
       fieldErrors(
         prodEnv({
           BOOTSTRAP_ADMIN_EMAIL: "admin@example.com",
-          BOOTSTRAP_ADMIN_PASSWORD: "change-me",
+          BOOTSTRAP_ADMIN_PASSWORD: "change-me-before-first-start",
         }),
       ).BOOTSTRAP_ADMIN_PASSWORD,
-    ).toBeDefined();
+    ).toEqual([expect.stringContaining("placeholder")]);
   });
 
   it("rejects a 31-char ADMIN_API_KEY everywhere", () => {

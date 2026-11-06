@@ -29,14 +29,18 @@ export function ipKey(c: Context): string {
 
 /**
  * Per-client rate-limit key for OAuth endpoints that accept client credentials:
- * `client:{id}` with no IP component, so one client's quota is shared across all
- * its source IPs (the per-IP limiter, `ipKey`, runs separately). Falls back to
- * `ip:{ip}` when no client_id is found (Basic header absent and no parsed form
- * body cached on `c.var.formBody` — the token route sets it before this runs).
+ * `client:{id}|ip:{ip}`. client_id is unauthenticated input, so keying on it alone
+ * would let anyone who knows a public client_id exhaust its bucket and lock that
+ * client out from every source; per-(client, IP) still bounds Argon2 work per
+ * source without letting one source lock other sources out (the per-IP limiter,
+ * `ipKey`, runs separately). Falls back to `ip:{ip}` when no client_id is found
+ * (Basic header absent and no parsed form body cached on `c.var.formBody` — the
+ * token route sets it before this runs).
  */
 export function clientIdKey(c: Context<AppEnv>): string {
   const clientId = basicClientId(c.req.header("Authorization")) ?? c.var.formBody?.client_id;
-  return clientId ? `client:${clientId}` : `ip:${getClientIp(c)}`;
+  const ip = getClientIp(c);
+  return clientId ? `client:${clientId}|ip:${ip}` : `ip:${ip}`;
 }
 
 function basicClientId(authHeader: string | undefined): string | undefined {

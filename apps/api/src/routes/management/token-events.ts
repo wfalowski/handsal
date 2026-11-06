@@ -10,7 +10,6 @@ import { getTokenStats, listTokenEvents } from "../../services/token-event.servi
 
 export const tokenEventRoutes = new Hono<AdminEnv>();
 
-// `q` matches application_client_id / jti prefix only; listTokenEvents has no application-name filter.
 tokenEventRoutes.get("/:tenantId/token-events", requireTenantAccess("auditor"), async (c) => {
   const query = tokenEventsQuerySchema.parse(c.req.query());
   return c.json(await listTokenEvents(c.req.param("tenantId"), query));

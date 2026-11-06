@@ -70,32 +70,34 @@ export async function addMember(
   input: MemberCreateInput,
 ): Promise<{ member: MemberDto; temporaryPassword?: string }> {
   const email = input.email.trim().toLowerCase();
-  const [existing] = await db
-    .select({ id: adminUsers.id })
-    .from(adminUsers)
-    .where(eq(adminUsers.email, email))
-    .limit(1);
-
-  let adminUserId = existing?.id;
   let temporaryPassword: string | undefined;
-  if (!adminUserId) {
-    temporaryPassword = generateClientSecret().slice(3, 27); // 24 base62 chars after `hs_`
-    const user = await createAdminUser({
-      email,
-      password: temporaryPassword,
-      name: input.name ?? email.split("@")[0],
-    });
-    adminUserId = user.id;
-  }
+  // One transaction: a failed membership insert must not leave an orphan admin user behind.
+  const member = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select({ id: adminUsers.id })
+      .from(adminUsers)
+      .where(eq(adminUsers.email, email))
+      .limit(1);
 
-  const [linked] = await db
-    .insert(tenantMembers)
-    .values({ tenantId, adminUserId, role: input.role })
-    .onConflictDoNothing()
-    .returning({ adminUserId: tenantMembers.adminUserId });
-  if (!linked) throw new ApiError(409, "already_member", "This user is already a member");
+    let adminUserId = existing?.id;
+    if (!adminUserId) {
+      temporaryPassword = generateClientSecret().slice(3, 27); // 24 base62 chars after `hs_`
+      const user = await createAdminUser(
+        { email, password: temporaryPassword, name: input.name ?? email.split("@")[0] },
+        tx,
+      );
+      adminUserId = user.id;
+    }
 
-  const member = await getMember(db, tenantId, adminUserId);
+    const [linked] = await tx
+      .insert(tenantMembers)
+      .values({ tenantId, adminUserId, role: input.role })
+      .onConflictDoNothing()
+      .returning({ adminUserId: tenantMembers.adminUserId });
+    if (!linked) throw new ApiError(409, "already_member", "This user is already a member");
+
+    return getMember(tx, tenantId, adminUserId);
+  });
   return temporaryPassword ? { member, temporaryPassword } : { member };
 }
 

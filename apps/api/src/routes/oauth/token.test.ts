@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type AppEnv, createApp } from "../../app.js";
+import { env } from "../../env.js";
 import { errorHandler } from "../../middleware/error-handler.js";
 import { tenantResolver } from "../../middleware/tenant-resolver.js";
 import { ensureActiveKey, getJwks } from "../../services/signing-key.service.js";
@@ -182,6 +183,26 @@ describe("POST /t/:slug/oauth/token", () => {
     expect((await res.json()).expires_in).toBe(3600);
   });
 
+  it("repeated parameters → 400 (invalid_target for resource, invalid_request otherwise)", async () => {
+    const { tenant, auth } = await setup();
+    const post = (body: string) =>
+      app.request(tokenUrl(tenant.slug), {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", ...auth },
+        body,
+      });
+    const twoResources = await post(
+      `grant_type=client_credentials&resource=${encodeURIComponent(PAYMENTS)}&resource=https%3A%2F%2Fb.example`,
+    );
+    expect(twoResources.status).toBe(400);
+    expect((await twoResources.json()).error).toBe("invalid_target");
+    const twoScopes = await post(
+      `grant_type=client_credentials&resource=${encodeURIComponent(PAYMENTS)}&scope=a&scope=b`,
+    );
+    expect(twoScopes.status).toBe(400);
+    expect((await twoScopes.json()).error).toBe("invalid_request");
+  });
+
   describe("failures record one denied token event", () => {
     async function expectDenied(
       res: Response,
@@ -212,6 +233,18 @@ describe("POST /t/:slug/oauth/token", () => {
         applicationId: application.id,
         applicationClientId: application.clientId,
       });
+    });
+
+    it("over-long resource → invalid_target", async () => {
+      const { tenant, auth } = await setup();
+      const res = await formRequest(
+        app,
+        tokenUrl(tenant.slug),
+        { grant_type: "client_credentials", resource: `https://a.example/${"x".repeat(600)}` },
+        auth,
+      );
+      const body = await expectDenied(res, 400, "invalid_target", "invalid_target");
+      expect(body.error_description).toBe("resource is invalid");
     });
 
     it("foreign-tenant audience → invalid_target without leaking scopes", async () => {
@@ -372,5 +405,20 @@ describe("POST /t/:slug/oauth/token", () => {
       Authorization: basic(other.application.clientId, other.clientSecret),
     });
     expect(otherRes.status).not.toBe(429);
+
+    // The same client_id from another source IP is not locked out by the first source.
+    const prevTrustProxy = env.TRUST_PROXY;
+    env.TRUST_PROXY = "true";
+    try {
+      const fromA = { ...auth, "X-Forwarded-For": "203.0.113.1" };
+      const fromB = { ...auth, "X-Forwarded-For": "203.0.113.2" };
+      for (let i = 0; i < 2; i++) {
+        expect((await formRequest(limited, tokenUrl(tenant.slug), fields, fromA)).status).toBe(200);
+      }
+      expect((await formRequest(limited, tokenUrl(tenant.slug), fields, fromA)).status).toBe(429);
+      expect((await formRequest(limited, tokenUrl(tenant.slug), fields, fromB)).status).toBe(200);
+    } finally {
+      env.TRUST_PROXY = prevTrustProxy;
+    }
   });
 });

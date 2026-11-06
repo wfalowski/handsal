@@ -1,4 +1,5 @@
 import { adminUsers, db, pool, runMigrations } from "@handsal/db";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ApiError } from "../middleware/error-handler.js";
 import { addMember, createTenant, truncateAll } from "../test/factories.js";
@@ -39,6 +40,19 @@ describe("admin-user.service", () => {
     const err = await createAdminUser({ ...input, email: "ada@example.com" }).catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ statusCode: 409, errorCode: "email_exists" });
+  });
+
+  it("participates in a caller's transaction and rolls back with it", async () => {
+    const rollback = new Error("rollback");
+    await expect(
+      db.transaction(async (tx) => {
+        await createAdminUser(input, tx);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(
+      await db.select().from(adminUsers).where(eq(adminUsers.email, "ada@example.com")),
+    ).toEqual([]);
   });
 
   it("lists tenants with role and resolves the role per tenant", async () => {

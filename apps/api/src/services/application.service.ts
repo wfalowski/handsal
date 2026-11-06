@@ -167,12 +167,15 @@ export async function updateApplication(
   appId: string,
   input: ApplicationUpdateInput,
 ): Promise<ApplicationDto> {
-  return updateOne(tenantId, appId, {
+  const set = {
     name: input.name,
     description: input.description,
     tokenEndpointAuthMethod: input.tokenEndpointAuthMethod,
     tokenTtlSeconds: input.tokenTtlSeconds,
-  });
+  };
+  // Drizzle rejects an empty SET; an empty PATCH is a no-op read.
+  if (Object.values(set).every((v) => v === undefined)) return getApplication(tenantId, appId);
+  return updateOne(tenantId, appId, set);
 }
 
 export async function deleteApplication(tenantId: string, appId: string): Promise<void> {

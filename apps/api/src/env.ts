@@ -58,7 +58,8 @@ export const envSchema = z.object({
 // no secret at all.
 export const KNOWN_PLACEHOLDER_SECRETS = new Set([
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", // KEY_ENCRYPTION_SECRET placeholder
-  "change-me", // BOOTSTRAP_ADMIN_PASSWORD placeholder
+  "change-me-before-first-start", // BOOTSTRAP_ADMIN_PASSWORD placeholder (.env.example)
+  "change-me", // older BOOTSTRAP_ADMIN_PASSWORD placeholder
 ]);
 
 /**

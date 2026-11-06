@@ -84,6 +84,25 @@ describe("listTokenEvents", () => {
     expect(await ids({ q: "%" })).toEqual([]);
   });
 
+  it("q also matches the application name", async () => {
+    const tenant = await createTenant();
+    const { application } = await createApplication(tenant.id, { name: "Billing Gateway" });
+    await recordTokenEvent({
+      tenantId: tenant.id,
+      outcome: "issued",
+      applicationId: application.id,
+      applicationClientId: application.clientId,
+    });
+    await recordTokenEvent({
+      tenantId: tenant.id,
+      outcome: "denied",
+      applicationClientId: "app_x",
+    });
+
+    const { items } = await listTokenEvents(tenant.id, query({ q: "billing gate" }));
+    expect(items.map((e) => e.applicationId)).toEqual([application.id]);
+  });
+
   it("returns DTOs with ISO dates and rejects a garbage cursor", async () => {
     const tenant = await createTenant();
     await recordTokenEvent({

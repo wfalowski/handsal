@@ -55,7 +55,11 @@ export async function listTokenEvents(
   if (query.q) {
     const q = escapeLike(query.q);
     conditions.push(
-      or(ilike(tokenEvents.applicationClientId, `%${q}%`), ilike(tokenEvents.jti, `${q}%`)),
+      or(
+        ilike(tokenEvents.applicationClientId, `%${q}%`),
+        ilike(tokenEvents.jti, `${q}%`),
+        ilike(applications.name, `%${q}%`),
+      ),
     );
   }
   if (query.cursor) {
@@ -68,6 +72,13 @@ export async function listTokenEvents(
   const rows = await db
     .select({ event: tokenEvents, createdAtText })
     .from(tokenEvents)
+    .leftJoin(
+      applications,
+      and(
+        eq(applications.tenantId, tokenEvents.tenantId),
+        eq(applications.id, tokenEvents.applicationId),
+      ),
+    )
     .where(and(...conditions))
     .orderBy(desc(tokenEvents.createdAt), desc(tokenEvents.id))
     .limit(query.limit + 1);

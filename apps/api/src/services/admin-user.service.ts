@@ -4,6 +4,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { ApiError } from "../middleware/error-handler.js";
 import { hashSecret, verifySecret } from "../utils/crypto.js";
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type AdminUser = typeof adminUsers.$inferSelect;
 
 export interface AdminUserCreateInput {
@@ -30,10 +31,14 @@ const dummyHash = () => {
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
-export async function createAdminUser(input: AdminUserCreateInput): Promise<AdminUser> {
+/** Pass `tx` to run inside a caller's transaction (e.g. together with the membership insert). */
+export async function createAdminUser(
+  input: AdminUserCreateInput,
+  tx: Tx | typeof db = db,
+): Promise<AdminUser> {
   const passwordHash = await hashSecret(input.password);
   try {
-    const [user] = await db
+    const [user] = await tx
       .insert(adminUsers)
       .values({
         email: normalizeEmail(input.email),

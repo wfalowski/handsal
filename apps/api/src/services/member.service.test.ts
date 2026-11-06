@@ -1,4 +1,5 @@
-import { db, pool, runMigrations, tenantMembers } from "@handsal/db";
+import { randomUUID } from "node:crypto";
+import { adminUsers, db, pool, runMigrations, tenantMembers } from "@handsal/db";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ApiError } from "../middleware/error-handler.js";
@@ -58,6 +59,16 @@ describe("addMember", () => {
     expect(res.member).toMatchObject({ email: "new@example.com", name: "New", role: "auditor" });
     const user = await authenticateAdminUser("new@example.com", res.temporaryPassword as string);
     expect(user?.id).toBe(res.member.adminUserId);
+  });
+
+  it("creates no admin user when the membership insert fails", async () => {
+    // Unknown tenant id → FK violation on tenant_members after the user insert.
+    await expect(
+      addMember(randomUUID(), { email: "orphan@example.com", role: "admin" }),
+    ).rejects.toThrow();
+    expect(
+      await db.select().from(adminUsers).where(eq(adminUsers.email, "orphan@example.com")),
+    ).toEqual([]);
   });
 
   it("already a member → 409 already_member", async () => {

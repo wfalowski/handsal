@@ -96,14 +96,14 @@ describe("clientIdKey", () => {
     return c.text(clientIdKey(c));
   });
 
-  it("keys on the Basic client_id alone, with no IP component", async () => {
+  it("keys on the Basic client_id plus the source IP", async () => {
     const res = await app.request("/k", { headers: { Authorization: basic("app_abc") } });
-    expect(await res.text()).toBe("client:app_abc");
+    expect(await res.text()).toBe("client:app_abc|ip:unknown");
   });
 
   it("reads client_id from the cached form body", async () => {
     const res = await app.request("/k", { method: "POST" });
-    expect(await res.text()).toBe("client:app_from_body");
+    expect(await res.text()).toBe("client:app_from_body|ip:unknown");
   });
 
   it("falls back to the IP-only key", async () => {

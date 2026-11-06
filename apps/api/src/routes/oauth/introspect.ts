@@ -26,10 +26,11 @@ export function createIntrospectRoutes({
     rateLimit({ keyFn: clientIdKey, max: clientMax, windowMs: WINDOW_MS, errorBody: "oauth" }),
     async (c) => {
       const tenant = c.var.tenant;
+      // Authenticate first so unauthenticated callers cannot probe tenant configuration.
+      await authenticateFormClient(c);
       if (!tenant.introspectionEnabled) {
         throw new OAuthError(OAUTH_ERRORS.INVALID_REQUEST, 404, "introspection disabled");
       }
-      await authenticateFormClient(c);
 
       const parsed = introspectRequestSchema.safeParse(c.var.formBody);
       if (!parsed.success) {
