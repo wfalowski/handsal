@@ -19,6 +19,8 @@ export class OAuthError extends Error {
   public securityLogged = false;
   /** Internal failure reason for token events/logs (e.g. `bad_secret`); never sent to the client. */
   public reason?: string;
+  /** Sent as `Retry-After` when set (e.g. an exhausted agent token budget). */
+  public retryAfterSeconds?: number;
 
   constructor(
     public readonly errorCode: string,
@@ -66,6 +68,9 @@ export function errorHandler(err: Error, c: Context): Response {
     // RFC 6749 §5.2: when client authentication fails, include WWW-Authenticate
     if (err.statusCode === 401 && err.errorCode === OAUTH_ERRORS.INVALID_CLIENT) {
       c.header("WWW-Authenticate", 'Basic realm="handsal"');
+    }
+    if (err.retryAfterSeconds !== undefined) {
+      c.header("Retry-After", String(err.retryAfterSeconds));
     }
     c.header("Cache-Control", "no-store");
     c.header("Pragma", "no-cache");

@@ -69,10 +69,9 @@ export const applicationDtoSchema = z.object({
   lastTokenAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
-  // shortcut: agent fields are optional until the API mapper emits them (Task 6.2 slice C); then drop `.optional()`.
-  agentRuntime: z.string().nullable().optional(),
-  operatorEmail: z.string().nullable().optional(),
-  allowedCidrs: z.array(z.string()).optional(),
-  maxScopesPerToken: z.number().int().nullable().optional(),
-  tokenBudgetPerHour: z.number().int().nullable().optional(),
+  agentRuntime: z.string().nullable(),
+  operatorEmail: z.string().nullable(),
+  allowedCidrs: z.array(z.string()),
+  maxScopesPerToken: z.number().int().nullable(),
+  tokenBudgetPerHour: z.number().int().nullable(),
 });

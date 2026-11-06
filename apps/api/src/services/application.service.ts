@@ -1,4 +1,4 @@
-import { applicationGrants, applications, db, scopes } from "@handsal/db";
+import { applicationGrants, applicationKeys, applications, db, scopes } from "@handsal/db";
 import type {
   ApplicationDto,
   applicationCreateSchema,
@@ -7,6 +7,7 @@ import type {
 import { and, asc, eq, gt, ilike, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { ApiError } from "../middleware/error-handler.js";
+import { parseCidrs } from "../utils/cidr.js";
 import { generateClientId, generateClientSecret, hashSecret } from "../utils/crypto.js";
 
 type ApplicationRow = typeof applications.$inferSelect;
@@ -33,7 +34,62 @@ export function toApplicationDto(row: ApplicationRow): ApplicationDto {
     lastTokenAt: iso(row.lastTokenAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    agentRuntime: row.agentRuntime,
+    operatorEmail: row.operatorEmail,
+    allowedCidrs: row.allowedCidrs,
+    maxScopesPerToken: row.maxScopesPerToken,
+    tokenBudgetPerHour: row.tokenBudgetPerHour,
   };
+}
+
+const AGENT_FIELDS = [
+  "agentRuntime",
+  "operatorEmail",
+  "allowedCidrs",
+  "maxScopesPerToken",
+  "tokenBudgetPerHour",
+] as const;
+type AgentFieldsInput = Pick<ApplicationUpdateInput, (typeof AGENT_FIELDS)[number]>;
+
+const hasAgentField = (input: AgentFieldsInput) => AGENT_FIELDS.some((f) => input[f] !== undefined);
+
+/** Rejects guardrail fields on a service app and CIDRs Node's parser refuses. */
+function assertAgentFields(kind: "service" | "agent", input: AgentFieldsInput): void {
+  if (kind !== "agent" && hasAgentField(input)) {
+    throw new ApiError(
+      400,
+      "agent_fields_on_service",
+      "Agent fields are only allowed on agent applications",
+    );
+  }
+  try {
+    parseCidrs(input.allowedCidrs ?? []);
+  } catch {
+    throw new ApiError(400, "invalid_cidr", "allowedCidrs contains an invalid CIDR");
+  }
+}
+
+const noKey = () =>
+  new ApiError(
+    409,
+    "no_application_key",
+    "Register an active public key before switching to private_key_jwt",
+  );
+
+/** private_key_jwt without an active registered key would lock the client out. */
+async function assertHasActiveKey(tenantId: string, appId: string): Promise<void> {
+  const [key] = await db
+    .select({ id: applicationKeys.id })
+    .from(applicationKeys)
+    .where(
+      and(
+        eq(applicationKeys.tenantId, tenantId),
+        eq(applicationKeys.applicationId, appId),
+        eq(applicationKeys.status, "active"),
+      ),
+    )
+    .limit(1);
+  if (!key) throw noKey();
 }
 
 const notFound = () => new ApiError(404, "application_not_found", "Application not found");
@@ -52,6 +108,10 @@ export async function createApplication(
   input: ApplicationCreateInput,
   createdBy?: string,
 ): Promise<{ application: ApplicationDto; clientSecret: string }> {
+  const kind = input.kind ?? "service";
+  assertAgentFields(kind, input);
+  // A new application has no keys yet: private_key_jwt is reachable only via PATCH after registering one.
+  if (input.tokenEndpointAuthMethod === "private_key_jwt") throw noKey();
   const clientSecret = generateClientSecret();
   const clientSecretHash = await hashSecret(clientSecret);
   const [row] = await db
@@ -60,12 +120,17 @@ export async function createApplication(
       tenantId,
       name: input.name,
       description: input.description ?? null,
-      kind: "service",
+      kind,
       clientId: generateClientId(),
       clientSecretHash,
       tokenEndpointAuthMethod: input.tokenEndpointAuthMethod ?? "client_secret_basic",
       tokenTtlSeconds: input.tokenTtlSeconds ?? null,
       createdBy: createdBy ?? null,
+      agentRuntime: input.agentRuntime ?? null,
+      operatorEmail: input.operatorEmail ?? null,
+      allowedCidrs: input.allowedCidrs ?? [],
+      maxScopesPerToken: input.maxScopesPerToken ?? null,
+      tokenBudgetPerHour: input.tokenBudgetPerHour ?? null,
     })
     .returning()
     .catch(mapNameConflict);
@@ -78,7 +143,7 @@ function escapeLike(value: string): string {
 
 export async function listApplications(
   tenantId: string,
-  filters: { q?: string; status?: ApplicationListStatus } = {},
+  filters: { q?: string; status?: ApplicationListStatus; kind?: "service" | "agent" } = {},
 ): Promise<ApplicationListItem[]> {
   // Per-application grant summary, computed once for the tenant and joined (no N+1).
   const grantSummary = db
@@ -108,6 +173,7 @@ export async function listApplications(
       or(ilike(applications.name, pattern), ilike(applications.clientId, pattern)) as SQL,
     );
   }
+  if (filters.kind) conditions.push(eq(applications.kind, filters.kind));
   if (filters.status === "active" || filters.status === "disabled") {
     conditions.push(eq(applications.status, filters.status));
   } else if (filters.status === "needs_attention") {
@@ -167,11 +233,27 @@ export async function updateApplication(
   appId: string,
   input: ApplicationUpdateInput,
 ): Promise<ApplicationDto> {
+  // Only guarded patches pay for the extra read; the common path stays one statement.
+  if (hasAgentField(input) || input.tokenEndpointAuthMethod === "private_key_jwt") {
+    const current = await getApplication(tenantId, appId);
+    assertAgentFields(current.kind, input);
+    if (
+      input.tokenEndpointAuthMethod === "private_key_jwt" &&
+      current.tokenEndpointAuthMethod !== "private_key_jwt"
+    ) {
+      await assertHasActiveKey(tenantId, appId);
+    }
+  }
   const set = {
     name: input.name,
     description: input.description,
     tokenEndpointAuthMethod: input.tokenEndpointAuthMethod,
     tokenTtlSeconds: input.tokenTtlSeconds,
+    agentRuntime: input.agentRuntime,
+    operatorEmail: input.operatorEmail,
+    allowedCidrs: input.allowedCidrs === null ? [] : input.allowedCidrs,
+    maxScopesPerToken: input.maxScopesPerToken,
+    tokenBudgetPerHour: input.tokenBudgetPerHour,
   };
   // Drizzle rejects an empty SET; an empty PATCH is a no-op read.
   if (Object.values(set).every((v) => v === undefined)) return getApplication(tenantId, appId);

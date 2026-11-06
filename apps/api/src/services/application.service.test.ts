@@ -1,4 +1,4 @@
-import { applications, db, pool, runMigrations } from "@handsal/db";
+import { applicationKeys, applications, db, pool, runMigrations } from "@handsal/db";
 import { CLIENT_ID_REGEX } from "@handsal/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -178,6 +178,96 @@ describe("get / update / delete", () => {
 
     await deleteApplication(tenant.id, application.id);
     expect((await apiErrorOf(getApplication(tenant.id, application.id))).statusCode).toBe(404);
+  });
+});
+
+describe("agent applications", () => {
+  const guardrails = {
+    agentRuntime: "langgraph",
+    operatorEmail: "ops@example.com",
+    allowedCidrs: ["10.40.0.0/16"],
+    maxScopesPerToken: 2,
+    tokenBudgetPerHour: 120,
+  };
+
+  it("kind agent persists guardrails; omitted kind is service with null/empty agent fields", async () => {
+    const tenant = await createTenant();
+    const agent = (await createApplication(tenant.id, { kind: "agent", ...guardrails }))
+      .application;
+    expect(agent).toMatchObject({ kind: "agent", ...guardrails });
+    const service = (await createApplication(tenant.id)).application;
+    expect(service).toMatchObject({
+      kind: "service",
+      agentRuntime: null,
+      operatorEmail: null,
+      allowedCidrs: [],
+      maxScopesPerToken: null,
+      tokenBudgetPerHour: null,
+    });
+    expect((await listApplications(tenant.id, { kind: "agent" })).map((a) => a.id)).toEqual([
+      agent.id,
+    ]);
+  });
+
+  it("agent fields on a service → 400 agent_fields_on_service (create and patch)", async () => {
+    const tenant = await createTenant();
+    const created = await apiErrorOf(createApplication(tenant.id, { maxScopesPerToken: 2 }));
+    expect([created.statusCode, created.errorCode]).toEqual([400, "agent_fields_on_service"]);
+
+    const { application } = await createApplication(tenant.id);
+    const patched = await apiErrorOf(
+      updateApplication(tenant.id, application.id, { allowedCidrs: ["10.0.0.0/8"] }),
+    );
+    expect([patched.statusCode, patched.errorCode]).toEqual([400, "agent_fields_on_service"]);
+  });
+
+  it("patches guardrails; null clears them; a CIDR Node rejects → 400 invalid_cidr", async () => {
+    const tenant = await createTenant();
+    const { application } = await createApplication(tenant.id, { kind: "agent", ...guardrails });
+    const cleared = await updateApplication(tenant.id, application.id, {
+      allowedCidrs: null,
+      tokenBudgetPerHour: null,
+      maxScopesPerToken: 5,
+    });
+    expect(cleared).toMatchObject({
+      allowedCidrs: [],
+      tokenBudgetPerHour: null,
+      maxScopesPerToken: 5,
+    });
+
+    // Passes the shape regex, fails Node's parser.
+    const bad = await apiErrorOf(
+      updateApplication(tenant.id, application.id, { allowedCidrs: ["999.0.0.0/8"] }),
+    );
+    expect([bad.statusCode, bad.errorCode]).toEqual([400, "invalid_cidr"]);
+  });
+
+  it("private_key_jwt requires an active registered key → 409 no_application_key", async () => {
+    const tenant = await createTenant();
+    const onCreate = await apiErrorOf(
+      createApplication(tenant.id, { tokenEndpointAuthMethod: "private_key_jwt" }),
+    );
+    expect([onCreate.statusCode, onCreate.errorCode]).toEqual([409, "no_application_key"]);
+
+    const { application } = await createApplication(tenant.id, { kind: "agent" });
+    const toJwt = { tokenEndpointAuthMethod: "private_key_jwt" } as const;
+    const key = {
+      tenantId: tenant.id,
+      applicationId: application.id,
+      kid: "k1",
+      publicKeyPem: "pem",
+      fingerprintSha256: "f".repeat(64),
+    };
+    await db.insert(applicationKeys).values({ ...key, status: "retiring" });
+    expect((await apiErrorOf(updateApplication(tenant.id, application.id, toJwt))).errorCode).toBe(
+      "no_application_key",
+    );
+    await db
+      .insert(applicationKeys)
+      .values({ ...key, kid: "k2", fingerprintSha256: "e".repeat(64) });
+    expect(
+      (await updateApplication(tenant.id, application.id, toJwt)).tokenEndpointAuthMethod,
+    ).toBe("private_key_jwt");
   });
 });
 

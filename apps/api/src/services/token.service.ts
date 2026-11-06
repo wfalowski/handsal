@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { applications, db, scopes } from "@handsal/db";
+import { applications, db, scopes, tokenEvents } from "@handsal/db";
 import { OAUTH_ERRORS, TOKEN_TYPES } from "@handsal/shared";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { env } from "../env.js";
 import { OAuthError } from "../middleware/error-handler.js";
+import { ipInCidrs } from "../utils/cidr.js";
 import { signAccessToken } from "../utils/jwt.js";
 import { createLogger } from "../utils/logger.js";
 import type { AuthenticatedApplication } from "./client-auth.service.js";
@@ -27,11 +28,79 @@ function deny(code: string, description: string, reason: string): never {
   throw err;
 }
 
+/**
+ * Tokens issued to this application in the trailing hour, plus the seconds until the oldest of
+ * them leaves the window (1-3600; 1 when none).
+ */
+export async function countIssuedLastHour(
+  tenantId: string,
+  applicationId: string,
+): Promise<{ count: number; retryAfterSeconds: number }> {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      untilOldestExpires: sql<
+        number | null
+      >`ceil(extract(epoch from min(${tokenEvents.createdAt}) + interval '1 hour' - now()))::int`,
+    })
+    .from(tokenEvents)
+    .where(
+      and(
+        eq(tokenEvents.tenantId, tenantId),
+        eq(tokenEvents.applicationId, applicationId),
+        eq(tokenEvents.outcome, "issued"),
+        gte(tokenEvents.createdAt, sql`now() - interval '1 hour'`),
+      ),
+    );
+  const retryAfterSeconds = Math.min(3600, Math.max(1, row.untilOldestExpires ?? 1));
+  return { count: row.count, retryAfterSeconds };
+}
+
+/** Agent guardrails (6.2): source CIDR, scope ceiling, hourly budget. No-op for services. */
+async function enforceAgentGuardrails(
+  tenant: Tenant,
+  application: AuthenticatedApplication,
+  tokenScopes: string[],
+  sourceIp: string,
+): Promise<void> {
+  if (application.kind !== "agent") return;
+
+  let ipAllowed = false;
+  try {
+    ipAllowed = ipInCidrs(sourceIp, application.allowedCidrs);
+  } catch (err) {
+    // A corrupt stored CIDR fails closed.
+    logger.error({ err, tenantId: tenant.id, applicationId: application.id }, "Bad allowed_cidrs");
+  }
+  if (!ipAllowed) {
+    deny(OAUTH_ERRORS.UNAUTHORIZED_CLIENT, "Source address is not allowed", "cidr_denied");
+  }
+
+  // shortcut: with `scope` omitted the whole grant counts, so an over-granted agent must request explicitly (intended least-privilege nudge).
+  if (
+    application.maxScopesPerToken !== null &&
+    tokenScopes.length > application.maxScopesPerToken
+  ) {
+    deny(OAUTH_ERRORS.INVALID_SCOPE, "Too many scopes requested for one token", "scope_ceiling");
+  }
+
+  if (application.tokenBudgetPerHour !== null) {
+    // shortcut: read is not serialised with the insert, so concurrent requests can overshoot by the in-flight count; a counter row would make it exact.
+    const { count, retryAfterSeconds } = await countIssuedLastHour(tenant.id, application.id);
+    if (count >= application.tokenBudgetPerHour) {
+      const err = new OAuthError("too_many_requests", 429, "Hourly token budget exhausted");
+      err.reason = "budget_exhausted";
+      err.retryAfterSeconds = retryAfterSeconds;
+      throw err;
+    }
+  }
+}
+
 /** Issue a client-credentials access token for an already authenticated application. */
 export async function issueToken(
   tenant: Tenant,
   application: AuthenticatedApplication,
-  request: { audience: string; requestedScopes?: string[] },
+  request: { audience: string; requestedScopes?: string[]; taskId?: string },
   ctx: { sourceIp: string },
 ): Promise<TokenResponse> {
   if (tenant.status === "paused") {
@@ -73,6 +142,8 @@ export async function issueToken(
     }
   }
 
+  await enforceAgentGuardrails(tenant, application, tokenScopes, ctx.sourceIp);
+
   const ttl =
     application.tokenTtlSeconds ?? resource.tokenTtlSeconds ?? tenant.defaultTokenTtlSeconds;
   const iat = Math.floor(Date.now() / 1000);
@@ -89,6 +160,7 @@ export async function issueToken(
     scope,
     tenant: tenant.slug,
     client_kind: application.kind,
+    ...(request.taskId && { task_id: request.taskId }),
     jti,
     iat,
     exp,
@@ -105,6 +177,7 @@ export async function issueToken(
     jti,
     expiresAt: new Date(exp * 1000),
     sourceIp: ctx.sourceIp.slice(0, 45),
+    taskId: request.taskId ?? null,
   });
   try {
     await db

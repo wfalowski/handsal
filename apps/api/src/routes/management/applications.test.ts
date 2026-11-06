@@ -1,5 +1,5 @@
-import { applications, db, pool, runMigrations } from "@handsal/db";
-import { eq } from "drizzle-orm";
+import { applications, db, pool, runMigrations, tokenEvents } from "@handsal/db";
+import { desc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { app } from "../../app.js";
 import {
@@ -80,11 +80,49 @@ describe("applications CRUD", () => {
     }
   });
 
-  it("kind in the create body → 400 validation_error", async () => {
-    const { admin, base } = await setup();
-    const res = await req("POST", base, admin.headers, { name: "agent", kind: "agent" });
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe("validation_error");
+  it("creates an agent with guardrails; agent fields on a service → 400; kind is immutable", async () => {
+    const { tenant, admin, base } = await setup();
+    const guardrails = {
+      agentRuntime: "langgraph",
+      operatorEmail: "ops@example.com",
+      allowedCidrs: ["10.40.0.0/16", "2001:db8::/32"],
+      maxScopesPerToken: 3,
+      tokenBudgetPerHour: 120,
+    };
+    const res = await req("POST", base, admin.headers, {
+      name: "agent",
+      kind: "agent",
+      ...guardrails,
+    });
+    expect(res.status).toBe(201);
+    const agent = (await res.json()).application;
+    expect(agent).toMatchObject({ kind: "agent", ...guardrails });
+
+    const onService = await req("POST", base, admin.headers, {
+      name: "svc",
+      tokenBudgetPerHour: 5,
+    });
+    expect(onService.status).toBe(400);
+    expect((await onService.json()).error).toBe("agent_fields_on_service");
+
+    const badCidr = await req("POST", base, admin.headers, {
+      name: "agent-2",
+      kind: "agent",
+      allowedCidrs: ["999.0.0.0/8"],
+    });
+    expect(badCidr.status).toBe(400);
+    expect((await badCidr.json()).error).toBe("invalid_cidr");
+
+    const patched = await req("PATCH", `${base}/${agent.id}`, admin.headers, { kind: "service" });
+    expect(patched.status).toBe(200);
+    expect((await patched.json()).kind).toBe("agent");
+
+    const { application: svc } = await createApplication(tenant.id);
+    const svcPatch = await req("PATCH", `${base}/${svc.id}`, admin.headers, {
+      agentRuntime: "x",
+    });
+    expect(svcPatch.status).toBe(400);
+    expect((await svcPatch.json()).error).toBe("agent_fields_on_service");
   });
 
   it("invalid create body → 400; duplicate name → 409", async () => {
@@ -121,6 +159,7 @@ describe("applications CRUD", () => {
       issuer: `https://test.example.com/t/${tenant.slug}`,
       tokenEndpoint: `https://test.example.com/t/${tenant.slug}/oauth/token`,
       recentTokens: [],
+      agentBudgetUsed: null,
     });
 
     const tokenRes = await formRequest(
@@ -178,7 +217,8 @@ describe("applications CRUD", () => {
     const bad = await req("PATCH", `${base}/${application.id}`, admin.headers, {
       tokenEndpointAuthMethod: "private_key_jwt",
     });
-    expect(bad.status).toBe(400);
+    expect(bad.status).toBe(409);
+    expect((await bad.json()).error).toBe("no_application_key");
   });
 
   it("empty PATCH → 200 with the row unchanged", async () => {
@@ -248,6 +288,70 @@ describe("applications CRUD", () => {
     const dto = await revoked.json();
     expect(dto.id).toBe(application.id);
     expect(dto.tokensNotBefore).not.toBeNull();
+  });
+});
+
+describe("agent guardrails over HTTP", () => {
+  async function agentWithGrant(over: Record<string, unknown>) {
+    const ctx = await setup();
+    const { application, clientSecret } = await createApplication(ctx.tenant.id, {
+      kind: "agent",
+      ...over,
+    });
+    const { scopes } = await createResourceWithScopes(ctx.tenant.id, "https://api.x/pay", [
+      "pay:read",
+    ]);
+    await grant(ctx.tenant.id, application.id, [scopes[0].id]);
+    const token = () =>
+      formRequest(
+        app,
+        `/t/${ctx.tenant.slug}/oauth/token`,
+        { grant_type: "client_credentials", resource: "https://api.x/pay" },
+        {
+          Authorization: `Basic ${Buffer.from(`${application.clientId}:${clientSecret}`).toString("base64")}`,
+        },
+      );
+    return { ...ctx, application, token };
+  }
+
+  const lastDenial = async () =>
+    (await db.select().from(tokenEvents).orderBy(desc(tokenEvents.id)).limit(1))[0];
+
+  it("budget: N-th request 200, N+1 → 429 too_many_requests with Retry-After; agentBudgetUsed counts", async () => {
+    const { admin, base, application, token } = await agentWithGrant({ tokenBudgetPerHour: 2 });
+    const detail = async () =>
+      (await (await req("GET", `${base}/${application.id}`, admin.headers)).json()).agentBudgetUsed;
+    expect(await detail()).toBe(0);
+    expect((await token()).status).toBe(200);
+    expect((await token()).status).toBe(200);
+    const res = await token();
+    expect(res.status).toBe(429);
+    expect((await res.json()).error).toBe("too_many_requests");
+    expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(3500);
+    expect(await lastDenial()).toMatchObject({ outcome: "denied", reason: "budget_exhausted" });
+    expect(await detail()).toBe(2);
+  });
+
+  it("source IP outside allowed_cidrs → 400 unauthorized_client, event reason cidr_denied", async () => {
+    // Test requests carry no socket address, so the source IP is "unknown".
+    const { token } = await agentWithGrant({ allowedCidrs: ["10.40.0.0/16"] });
+    const res = await token();
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("unauthorized_client");
+    expect(res.headers.get("retry-after")).toBeNull();
+    expect(await lastDenial()).toMatchObject({ outcome: "denied", reason: "cidr_denied" });
+  });
+
+  it("?kind=agent filters the list", async () => {
+    const { tenant, admin, base } = await setup();
+    await createApplication(tenant.id, { name: "svc" });
+    await createApplication(tenant.id, { name: "bot", kind: "agent" });
+    const names = async (q: string) =>
+      (
+        (await (await req("GET", `${base}${q}`, admin.headers)).json()).items as { name: string }[]
+      ).map((a) => a.name);
+    expect(await names("?kind=agent")).toEqual(["bot"]);
+    expect(await names("?kind=service")).toEqual(["svc"]);
   });
 });
 

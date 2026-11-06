@@ -21,15 +21,17 @@ import {
 } from "../../services/application.service.js";
 import { getGrants } from "../../services/grant.service.js";
 import { getTenantById } from "../../services/tenant.service.js";
+import { countIssuedLastHour } from "../../services/token.service.js";
 import { listTokenEvents } from "../../services/token-event.service.js";
 import { appIdParam, grantRoutes } from "./grants.js";
 
-// `kind` is always `service` in MVP; strict() turns `{kind: ...}` (or any unknown key) into a 400.
+// strict(): any unknown key is a 400.
 const createBodySchema = applicationCreateSchema.strict();
 
 const listQuerySchema = z.object({
   q: z.string().max(255).optional(),
   status: z.enum(["active", "disabled", "needs_attention"]).optional(),
+  kind: z.enum(["service", "agent"]).optional(),
 });
 
 const RECENT_TOKENS_LIMIT = 5;
@@ -62,10 +64,12 @@ applicationRoutes.get(
     const tenantId = c.req.param("tenantId");
     const appId = appIdParam(c);
     const application = await getApplication(tenantId, appId);
-    const [tenant, grants, recent] = await Promise.all([
+    const budgeted = application.kind === "agent" && application.tokenBudgetPerHour !== null;
+    const [tenant, grants, recent, budget] = await Promise.all([
       getTenantById(tenantId),
       getGrants(tenantId, appId),
       listTokenEvents(tenantId, { applicationId: appId, limit: RECENT_TOKENS_LIMIT }),
+      budgeted ? countIssuedLastHour(tenantId, appId) : null,
     ]);
     // requireTenantAccess just confirmed the tenant; a miss means it was deleted mid-request.
     if (!tenant) throw new ApiError(404, "tenant_not_found", "Tenant not found");
@@ -76,6 +80,7 @@ applicationRoutes.get(
       issuer,
       tokenEndpoint: `${issuer}/oauth/token`,
       recentTokens: recent.items,
+      agentBudgetUsed: budget?.count ?? null,
     });
   },
 );
