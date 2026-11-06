@@ -8,6 +8,7 @@ import {
   applicationKeys,
   applications,
   approvalRequests,
+  approvalRules,
   resources,
   revokedTokens,
   scopes,
@@ -19,6 +20,7 @@ import {
 
 const TABLES = [
   "approval_requests",
+  "approval_rules",
   "token_events",
   "revoked_tokens",
   "signing_keys",
@@ -246,6 +248,60 @@ describe("schema constraints", () => {
     expect(await db.select().from(approvalRequests)).toHaveLength(0);
   });
 
+  it("rejects an approval rule whose scope belongs to another tenant", async () => {
+    const a = await createTenant("tenant-a");
+    const b = await createTenant("tenant-b");
+    const resourceOfB = await createResource(b.id);
+    const [scopeOfB] = await db
+      .insert(scopes)
+      .values({ tenantId: b.id, resourceId: resourceOfB.id, name: "x:write" })
+      .returning();
+
+    const code = await pgErrorCode(
+      db.insert(approvalRules).values({ tenantId: a.id, scopeId: scopeOfB.id }),
+    );
+
+    expect(code).toBe("23503");
+  });
+
+  it("cascades scope deletes to approval rules and nulls decided_by_rule_id", async () => {
+    const tenant = await createTenant("tenant-a");
+    const [app] = await db
+      .insert(applications)
+      .values({ tenantId: tenant.id, name: "app", clientId: "app_aaaaaaaaaaaaaaaaaaaa" })
+      .returning();
+    const resource = await createResource(tenant.id);
+    const [scope] = await db
+      .insert(scopes)
+      .values({ tenantId: tenant.id, resourceId: resource.id, name: "x:write" })
+      .returning();
+    const [rule] = await db
+      .insert(approvalRules)
+      .values({ tenantId: tenant.id, scopeId: scope.id, condition: { max_scopes: 2 } })
+      .returning();
+    expect(rule.condition).toEqual({ max_scopes: 2 });
+    expect(rule.action).toBe("auto_approve");
+    const [decided] = await db
+      .insert(approvalRequests)
+      .values({
+        ...approvalRequest(tenant.id, app.id, resource.id, resource.audience),
+        status: "approved",
+        decidedByRuleId: rule.id,
+        decidedAt: new Date(),
+      })
+      .returning();
+
+    await db.delete(scopes).where(eq(scopes.id, scope.id));
+
+    expect(await db.select().from(approvalRules)).toHaveLength(0);
+    const [row] = await db
+      .select()
+      .from(approvalRequests)
+      .where(eq(approvalRequests.id, decided.id));
+    expect(row.decidedByRuleId).toBeNull();
+    expect(row.status).toBe("approved");
+  });
+
   it("defaults token-exchange delegation settings and stores external_idp", async () => {
     const idp = {
       issuer: "https://idp.example",
@@ -301,6 +357,7 @@ describe("schema constraints", () => {
     await db
       .insert(approvalRequests)
       .values(approvalRequest(tenant.id, app.id, resource.id, resource.audience));
+    await db.insert(approvalRules).values({ tenantId: tenant.id, scopeId: scope.id });
 
     const children = TABLES.filter((t) => t !== "tenants" && t !== "admin_users");
     const count = async (table: string) => {

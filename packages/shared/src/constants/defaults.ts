@@ -10,6 +10,18 @@ export const DEFAULTS = {
   APPROVAL_TOKEN_TTL_SECONDS: 300,
   APPROVAL_POLL_INTERVAL_SECONDS: 5,
   APPROVALS_PAGE_SIZE: 50,
+  // A rule-approved request polls immediately.
+  APPROVAL_RULE_POLL_INTERVAL_SECONDS: 0,
+} as const;
+
+// Approval notification webhook (Task 6.5): one retry on network error or 5xx, never on 4xx.
+export const APPROVAL_WEBHOOK = {
+  EVENT_PENDING: "approval.pending",
+  SIGNATURE_HEADER: "X-Handsal-Signature",
+  EVENT_HEADER: "X-Handsal-Event",
+  TIMEOUT_MS: 5000,
+  RETRY_DELAY_MS: 2000,
+  SLACK_HOST_SUFFIX: "hooks.slack.com",
 } as const;
 
 // Agent guardrails (Task 6.2). TTL options are UI presets only; the backend TTL range is unchanged.

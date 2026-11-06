@@ -20,6 +20,9 @@ export const tenantUpdateSchema = z.object({
   introspectionEnabled: z.boolean().optional(),
   keyRotationDays: z.number().int().min(1).max(3650).nullable().optional(),
   externalIdp: externalIdpSchema.nullable().optional(),
+  // Approval webhook (6.5). https-only in production is enforced by the API route (needs env).
+  approvalWebhookUrl: z.url().max(2048).nullable().optional(),
+  approvalWebhookSecret: z.string().min(16).max(255).nullable().optional(),
 });
 
 export const tenantDtoSchema = z.object({
@@ -33,6 +36,10 @@ export const tenantDtoSchema = z.object({
   tokensNotBefore: z.iso.datetime().nullable(),
   issuer: z.string(),
   externalIdp: externalIdpSchema.nullable(),
+  // shortcut: both optional until the 6.5 API slice emits them; tighten (url nullable, secretSet required) then.
+  // The secret itself is write-only and never in the DTO.
+  approvalWebhookUrl: z.string().nullable().optional(),
+  approvalWebhookSecretSet: z.boolean().optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

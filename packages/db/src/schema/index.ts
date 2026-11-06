@@ -9,6 +9,7 @@ export {
   tokenEndpointAuthMethod,
 } from "./applications.js";
 export { approvalRequests, approvalStatus } from "./approval-requests.js";
+export { approvalRuleAction, approvalRules } from "./approval-rules.js";
 export { resourceKind, resourceStatus, resources } from "./resources.js";
 export { revokedTokens } from "./revoked-tokens.js";
 export { agentPolicy, scopes } from "./scopes.js";

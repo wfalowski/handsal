@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  APPROVAL_WEBHOOK,
   CLIENT_ASSERTION_TYPES,
   CLIENT_ID_REGEX,
   DEFAULTS,
@@ -12,9 +13,12 @@ import {
   applicationKeyCreateSchema,
   applicationKeyRetireSchema,
   applicationUpdateSchema,
+  approvalConditionSchema,
   approvalCountsDtoSchema,
   approvalDtoSchema,
   approvalGrantSchema,
+  approvalRuleCreateSchema,
+  approvalRuleDtoSchema,
   approvalsQuerySchema,
   externalIdpSchema,
   grantsReplaceSchema,
@@ -373,5 +377,63 @@ describe("application keys", () => {
   it("retire defaults grace", () => {
     expect(applicationKeyRetireSchema.parse({}).graceSeconds).toBe(DEFAULTS.SECRET_GRACE_SECONDS);
     expect(ok(applicationKeyRetireSchema, { graceSeconds: 604801 })).toBe(false);
+  });
+});
+
+describe("approval rules + webhook (6.5)", () => {
+  const uuid = "8d3c1f9e-2b4a-4c6d-9e8f-1a2b3c4d5e6f";
+  it("condition: all keys optional, strict, bounded", () => {
+    expect(ok(approvalConditionSchema, {})).toBe(true);
+    expect(
+      ok(approvalConditionSchema, {
+        application_ids: [uuid],
+        task_id_prefix: "INC-",
+        max_scopes: 2,
+      }),
+    ).toBe(true);
+    expect(ok(approvalConditionSchema, { amount_lt: 20 })).toBe(false);
+    expect(ok(approvalConditionSchema, { application_ids: ["nope"] })).toBe(false);
+    expect(ok(approvalConditionSchema, { application_ids: Array(51).fill(uuid) })).toBe(false);
+    expect(ok(approvalConditionSchema, { task_id_prefix: "" })).toBe(false);
+    expect(ok(approvalConditionSchema, { max_scopes: 0 })).toBe(false);
+    expect(ok(approvalConditionSchema, { max_scopes: 1.5 })).toBe(false);
+  });
+  it("create defaults condition to {}", () => {
+    expect(approvalRuleCreateSchema.parse({ scopeId: uuid }).condition).toEqual({});
+    expect(ok(approvalRuleCreateSchema, { scopeId: "nope" })).toBe(false);
+  });
+  it("dto action is auto_approve only", () => {
+    const dto = {
+      id: uuid,
+      scopeId: uuid,
+      scopeName: "refunds:write",
+      resourceName: "Payments",
+      condition: {},
+      action: "auto_approve",
+      createdBy: null,
+      createdAt: "2026-11-06T12:00:00.000Z",
+    };
+    expect(ok(approvalRuleDtoSchema, dto)).toBe(true);
+    expect(ok(approvalRuleDtoSchema, { ...dto, action: "deny" })).toBe(false);
+  });
+  it("tenant update: webhook url and write-only secret", () => {
+    expect(
+      ok(tenantUpdateSchema, {
+        approvalWebhookUrl: "https://hooks.slack.com/services/x",
+        approvalWebhookSecret: "s".repeat(16),
+      }),
+    ).toBe(true);
+    expect(ok(tenantUpdateSchema, { approvalWebhookUrl: null, approvalWebhookSecret: null })).toBe(
+      true,
+    );
+    expect(ok(tenantUpdateSchema, { approvalWebhookUrl: "not a url" })).toBe(false);
+    expect(ok(tenantUpdateSchema, { approvalWebhookSecret: "short" })).toBe(false);
+    expect(ok(tenantUpdateSchema, { approvalWebhookSecret: "s".repeat(256) })).toBe(false);
+  });
+  it("tenant dto exposes secretSet, never the secret; counts gain rules", () => {
+    expect(tenantDtoSchema.shape.approvalWebhookSecretSet).toBeDefined();
+    expect("approvalWebhookSecret" in tenantDtoSchema.shape).toBe(false);
+    expect(approvalCountsDtoSchema.shape.rules).toBeDefined();
+    expect(APPROVAL_WEBHOOK.SIGNATURE_HEADER).toBe("X-Handsal-Signature");
   });
 });

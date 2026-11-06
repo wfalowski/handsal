@@ -40,4 +40,6 @@ export const approvalCountsDtoSchema = z.object({
   approvedToday: count,
   deniedToday: count,
   medianWaitSeconds: z.number().nullable(),
+  // shortcut: optional until the 6.5 API slice emits it; make it required then.
+  rules: count.optional(),
 });

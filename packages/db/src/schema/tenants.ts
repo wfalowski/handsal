@@ -4,6 +4,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  text,
   timestamp,
   uuid,
   varchar,
@@ -24,6 +25,9 @@ export const tenants = pgTable("tenants", {
   // Trusted external IdP for token-exchange subject tokens; null = none.
   // shortcut: one external issuer per tenant; promote to a trusted_issuers table when a tenant needs two
   externalIdp: jsonb("external_idp").$type<{ issuer: string; jwksUri: string; audience: string }>(),
+  // Approval notifications (6.5). The secret is an HMAC key: AES-256-GCM encrypted, never returned.
+  approvalWebhookUrl: varchar("approval_webhook_url", { length: 2048 }),
+  approvalWebhookSecretEnc: text("approval_webhook_secret_enc"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { adminUsers } from "./admin-users.js";
 import { applications } from "./applications.js";
+import { approvalRules } from "./approval-rules.js";
 import { resources } from "./resources.js";
 import { tenants } from "./tenants.js";
 
@@ -41,6 +42,10 @@ export const approvalRequests = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     // The human who decided; null for expiry and ADMIN_API_KEY actors.
     decidedBy: uuid("decided_by").references(() => adminUsers.id, { onDelete: "set null" }),
+    // The auto-approve rule that decided; null for human decisions and expiry.
+    decidedByRuleId: uuid("decided_by_rule_id").references(() => approvalRules.id, {
+      onDelete: "set null",
+    }),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
