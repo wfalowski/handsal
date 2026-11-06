@@ -8,211 +8,246 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from "./routes/__root";
-import { Route as IndexRouteImport } from "./routes/index";
-import { Route as LoginRouteImport } from "./routes/login";
-import { Route as TTenantIdRouteImport } from "./routes/t.$tenantId";
-import { Route as TTenantIdApplicationsRouteImport } from "./routes/t.$tenantId.applications";
-import { Route as TTenantIdResourcesRouteImport } from "./routes/t.$tenantId.resources";
-import { Route as TTenantIdSettingsRouteImport } from "./routes/t.$tenantId.settings";
-import { Route as TTenantIdTokensRouteImport } from "./routes/t.$tenantId.tokens";
-import { Route as TenantsRouteImport } from "./routes/tenants";
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as TenantsRouteImport } from './routes/tenants'
+import { Route as TTenantIdRouteImport } from './routes/t.$tenantId'
+import { Route as TTenantIdApplicationsRouteImport } from './routes/t.$tenantId.applications'
+import { Route as TTenantIdResourcesRouteImport } from './routes/t.$tenantId.resources'
+import { Route as TTenantIdSettingsRouteImport } from './routes/t.$tenantId.settings'
+import { Route as TTenantIdTokensRouteImport } from './routes/t.$tenantId.tokens'
+import { Route as TTenantIdApplicationsAppIdRouteImport } from './routes/t.$tenantId.applications.$appId'
 
 const IndexRoute = IndexRouteImport.update({
-  id: "/",
-  path: "/",
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const LoginRoute = LoginRouteImport.update({
-  id: "/login",
-  path: "/login",
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const TenantsRoute = TenantsRouteImport.update({
-  id: "/tenants",
-  path: "/tenants",
+  id: '/tenants',
+  path: '/tenants',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const TTenantIdRoute = TTenantIdRouteImport.update({
-  id: "/t/$tenantId",
-  path: "/t/$tenantId",
+  id: '/t/$tenantId',
+  path: '/t/$tenantId',
   getParentRoute: () => rootRouteImport,
-} as any);
+} as any)
 const TTenantIdApplicationsRoute = TTenantIdApplicationsRouteImport.update({
-  id: "/applications",
-  path: "/applications",
+  id: '/applications',
+  path: '/applications',
   getParentRoute: () => TTenantIdRoute,
-} as any);
+} as any)
 const TTenantIdResourcesRoute = TTenantIdResourcesRouteImport.update({
-  id: "/resources",
-  path: "/resources",
+  id: '/resources',
+  path: '/resources',
   getParentRoute: () => TTenantIdRoute,
-} as any);
+} as any)
 const TTenantIdSettingsRoute = TTenantIdSettingsRouteImport.update({
-  id: "/settings",
-  path: "/settings",
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => TTenantIdRoute,
-} as any);
+} as any)
 const TTenantIdTokensRoute = TTenantIdTokensRouteImport.update({
-  id: "/tokens",
-  path: "/tokens",
+  id: '/tokens',
+  path: '/tokens',
   getParentRoute: () => TTenantIdRoute,
-} as any);
+} as any)
+const TTenantIdApplicationsAppIdRoute =
+  TTenantIdApplicationsAppIdRouteImport.update({
+    id: '/$appId',
+    path: '/$appId',
+    getParentRoute: () => TTenantIdApplicationsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
-  "/": typeof IndexRoute;
-  "/login": typeof LoginRoute;
-  "/tenants": typeof TenantsRoute;
-  "/t/$tenantId": typeof TTenantIdRouteWithChildren;
-  "/t/$tenantId/applications": typeof TTenantIdApplicationsRoute;
-  "/t/$tenantId/resources": typeof TTenantIdResourcesRoute;
-  "/t/$tenantId/settings": typeof TTenantIdSettingsRoute;
-  "/t/$tenantId/tokens": typeof TTenantIdTokensRoute;
+  '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/tenants': typeof TenantsRoute
+  '/t/$tenantId': typeof TTenantIdRouteWithChildren
+  '/t/$tenantId/applications': typeof TTenantIdApplicationsRouteWithChildren
+  '/t/$tenantId/resources': typeof TTenantIdResourcesRoute
+  '/t/$tenantId/settings': typeof TTenantIdSettingsRoute
+  '/t/$tenantId/tokens': typeof TTenantIdTokensRoute
+  '/t/$tenantId/applications/$appId': typeof TTenantIdApplicationsAppIdRoute
 }
 export interface FileRoutesByTo {
-  "/": typeof IndexRoute;
-  "/login": typeof LoginRoute;
-  "/tenants": typeof TenantsRoute;
-  "/t/$tenantId": typeof TTenantIdRouteWithChildren;
-  "/t/$tenantId/applications": typeof TTenantIdApplicationsRoute;
-  "/t/$tenantId/resources": typeof TTenantIdResourcesRoute;
-  "/t/$tenantId/settings": typeof TTenantIdSettingsRoute;
-  "/t/$tenantId/tokens": typeof TTenantIdTokensRoute;
+  '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/tenants': typeof TenantsRoute
+  '/t/$tenantId': typeof TTenantIdRouteWithChildren
+  '/t/$tenantId/applications': typeof TTenantIdApplicationsRouteWithChildren
+  '/t/$tenantId/resources': typeof TTenantIdResourcesRoute
+  '/t/$tenantId/settings': typeof TTenantIdSettingsRoute
+  '/t/$tenantId/tokens': typeof TTenantIdTokensRoute
+  '/t/$tenantId/applications/$appId': typeof TTenantIdApplicationsAppIdRoute
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport;
-  "/": typeof IndexRoute;
-  "/login": typeof LoginRoute;
-  "/tenants": typeof TenantsRoute;
-  "/t/$tenantId": typeof TTenantIdRouteWithChildren;
-  "/t/$tenantId/applications": typeof TTenantIdApplicationsRoute;
-  "/t/$tenantId/resources": typeof TTenantIdResourcesRoute;
-  "/t/$tenantId/settings": typeof TTenantIdSettingsRoute;
-  "/t/$tenantId/tokens": typeof TTenantIdTokensRoute;
+  __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
+  '/login': typeof LoginRoute
+  '/tenants': typeof TenantsRoute
+  '/t/$tenantId': typeof TTenantIdRouteWithChildren
+  '/t/$tenantId/applications': typeof TTenantIdApplicationsRouteWithChildren
+  '/t/$tenantId/resources': typeof TTenantIdResourcesRoute
+  '/t/$tenantId/settings': typeof TTenantIdSettingsRoute
+  '/t/$tenantId/tokens': typeof TTenantIdTokensRoute
+  '/t/$tenantId/applications/$appId': typeof TTenantIdApplicationsAppIdRoute
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath;
+  fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | "/"
-    | "/login"
-    | "/tenants"
-    | "/t/$tenantId"
-    | "/t/$tenantId/applications"
-    | "/t/$tenantId/resources"
-    | "/t/$tenantId/settings"
-    | "/t/$tenantId/tokens";
-  fileRoutesByTo: FileRoutesByTo;
+    | '/'
+    | '/login'
+    | '/tenants'
+    | '/t/$tenantId'
+    | '/t/$tenantId/applications'
+    | '/t/$tenantId/resources'
+    | '/t/$tenantId/settings'
+    | '/t/$tenantId/tokens'
+    | '/t/$tenantId/applications/$appId'
+  fileRoutesByTo: FileRoutesByTo
   to:
-    | "/"
-    | "/login"
-    | "/tenants"
-    | "/t/$tenantId"
-    | "/t/$tenantId/applications"
-    | "/t/$tenantId/resources"
-    | "/t/$tenantId/settings"
-    | "/t/$tenantId/tokens";
+    | '/'
+    | '/login'
+    | '/tenants'
+    | '/t/$tenantId'
+    | '/t/$tenantId/applications'
+    | '/t/$tenantId/resources'
+    | '/t/$tenantId/settings'
+    | '/t/$tenantId/tokens'
+    | '/t/$tenantId/applications/$appId'
   id:
-    | "__root__"
-    | "/"
-    | "/login"
-    | "/tenants"
-    | "/t/$tenantId"
-    | "/t/$tenantId/applications"
-    | "/t/$tenantId/resources"
-    | "/t/$tenantId/settings"
-    | "/t/$tenantId/tokens";
-  fileRoutesById: FileRoutesById;
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/tenants'
+    | '/t/$tenantId'
+    | '/t/$tenantId/applications'
+    | '/t/$tenantId/resources'
+    | '/t/$tenantId/settings'
+    | '/t/$tenantId/tokens'
+    | '/t/$tenantId/applications/$appId'
+  fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute;
-  LoginRoute: typeof LoginRoute;
-  TenantsRoute: typeof TenantsRoute;
-  TTenantIdRoute: typeof TTenantIdRouteWithChildren;
+  IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
+  TenantsRoute: typeof TenantsRoute
+  TTenantIdRoute: typeof TTenantIdRouteWithChildren
 }
 
-declare module "@tanstack/react-router" {
+declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    "/": {
-      id: "/";
-      path: "/";
-      fullPath: "/";
-      preLoaderRoute: typeof IndexRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/login": {
-      id: "/login";
-      path: "/login";
-      fullPath: "/login";
-      preLoaderRoute: typeof LoginRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/tenants": {
-      id: "/tenants";
-      path: "/tenants";
-      fullPath: "/tenants";
-      preLoaderRoute: typeof TenantsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/t/$tenantId": {
-      id: "/t/$tenantId";
-      path: "/t/$tenantId";
-      fullPath: "/t/$tenantId";
-      preLoaderRoute: typeof TTenantIdRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    "/t/$tenantId/applications": {
-      id: "/t/$tenantId/applications";
-      path: "/applications";
-      fullPath: "/t/$tenantId/applications";
-      preLoaderRoute: typeof TTenantIdApplicationsRouteImport;
-      parentRoute: typeof TTenantIdRoute;
-    };
-    "/t/$tenantId/resources": {
-      id: "/t/$tenantId/resources";
-      path: "/resources";
-      fullPath: "/t/$tenantId/resources";
-      preLoaderRoute: typeof TTenantIdResourcesRouteImport;
-      parentRoute: typeof TTenantIdRoute;
-    };
-    "/t/$tenantId/settings": {
-      id: "/t/$tenantId/settings";
-      path: "/settings";
-      fullPath: "/t/$tenantId/settings";
-      preLoaderRoute: typeof TTenantIdSettingsRouteImport;
-      parentRoute: typeof TTenantIdRoute;
-    };
-    "/t/$tenantId/tokens": {
-      id: "/t/$tenantId/tokens";
-      path: "/tokens";
-      fullPath: "/t/$tenantId/tokens";
-      preLoaderRoute: typeof TTenantIdTokensRouteImport;
-      parentRoute: typeof TTenantIdRoute;
-    };
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tenants': {
+      id: '/tenants'
+      path: '/tenants'
+      fullPath: '/tenants'
+      preLoaderRoute: typeof TenantsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/t/$tenantId': {
+      id: '/t/$tenantId'
+      path: '/t/$tenantId'
+      fullPath: '/t/$tenantId'
+      preLoaderRoute: typeof TTenantIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/t/$tenantId/applications': {
+      id: '/t/$tenantId/applications'
+      path: '/applications'
+      fullPath: '/t/$tenantId/applications'
+      preLoaderRoute: typeof TTenantIdApplicationsRouteImport
+      parentRoute: typeof TTenantIdRoute
+    }
+    '/t/$tenantId/resources': {
+      id: '/t/$tenantId/resources'
+      path: '/resources'
+      fullPath: '/t/$tenantId/resources'
+      preLoaderRoute: typeof TTenantIdResourcesRouteImport
+      parentRoute: typeof TTenantIdRoute
+    }
+    '/t/$tenantId/settings': {
+      id: '/t/$tenantId/settings'
+      path: '/settings'
+      fullPath: '/t/$tenantId/settings'
+      preLoaderRoute: typeof TTenantIdSettingsRouteImport
+      parentRoute: typeof TTenantIdRoute
+    }
+    '/t/$tenantId/tokens': {
+      id: '/t/$tenantId/tokens'
+      path: '/tokens'
+      fullPath: '/t/$tenantId/tokens'
+      preLoaderRoute: typeof TTenantIdTokensRouteImport
+      parentRoute: typeof TTenantIdRoute
+    }
+    '/t/$tenantId/applications/$appId': {
+      id: '/t/$tenantId/applications/$appId'
+      path: '/$appId'
+      fullPath: '/t/$tenantId/applications/$appId'
+      preLoaderRoute: typeof TTenantIdApplicationsAppIdRouteImport
+      parentRoute: typeof TTenantIdApplicationsRoute
+    }
   }
 }
 
+interface TTenantIdApplicationsRouteChildren {
+  TTenantIdApplicationsAppIdRoute: typeof TTenantIdApplicationsAppIdRoute
+}
+
+const TTenantIdApplicationsRouteChildren: TTenantIdApplicationsRouteChildren = {
+  TTenantIdApplicationsAppIdRoute: TTenantIdApplicationsAppIdRoute,
+}
+
+const TTenantIdApplicationsRouteWithChildren =
+  TTenantIdApplicationsRoute._addFileChildren(
+    TTenantIdApplicationsRouteChildren,
+  )
+
 interface TTenantIdRouteChildren {
-  TTenantIdApplicationsRoute: typeof TTenantIdApplicationsRoute;
-  TTenantIdResourcesRoute: typeof TTenantIdResourcesRoute;
-  TTenantIdSettingsRoute: typeof TTenantIdSettingsRoute;
-  TTenantIdTokensRoute: typeof TTenantIdTokensRoute;
+  TTenantIdApplicationsRoute: typeof TTenantIdApplicationsRouteWithChildren
+  TTenantIdResourcesRoute: typeof TTenantIdResourcesRoute
+  TTenantIdSettingsRoute: typeof TTenantIdSettingsRoute
+  TTenantIdTokensRoute: typeof TTenantIdTokensRoute
 }
 
 const TTenantIdRouteChildren: TTenantIdRouteChildren = {
-  TTenantIdApplicationsRoute: TTenantIdApplicationsRoute,
+  TTenantIdApplicationsRoute: TTenantIdApplicationsRouteWithChildren,
   TTenantIdResourcesRoute: TTenantIdResourcesRoute,
   TTenantIdSettingsRoute: TTenantIdSettingsRoute,
   TTenantIdTokensRoute: TTenantIdTokensRoute,
-};
+}
 
-const TTenantIdRouteWithChildren = TTenantIdRoute._addFileChildren(TTenantIdRouteChildren);
+const TTenantIdRouteWithChildren = TTenantIdRoute._addFileChildren(
+  TTenantIdRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   TenantsRoute: TenantsRoute,
   TTenantIdRoute: TTenantIdRouteWithChildren,
-};
+}
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>();
+  ._addFileTypes<FileRouteTypes>()

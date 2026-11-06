@@ -1,9 +1,18 @@
-import type { TokenEventDto, TokenStatsDto } from "@handsal/shared";
+import type {
+  ApplicationDto,
+  ResourceDto,
+  ScopeDto,
+  TenantDto,
+  TokenEventDto,
+  TokenStatsDto,
+} from "@handsal/shared";
 import {
+  keepPreviousData,
   type QueryClient,
   queryOptions,
   useInfiniteQuery,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -136,5 +145,159 @@ export function useTokenApps(tenantId: string) {
       api<{ items: { id: string; name: string }[] }>(`/api/tenants/${tenantId}/applications`),
     staleTime: 30_000,
     select: (d) => new Map(d.items.map((a) => [a.id, a.name])),
+// --- applications (Task 4.2)
+export type ApplicationStatusFilter = "active" | "needs_attention";
+export type ApplicationListItem = ApplicationDto & { resourceCount: number; scopeNames: string[] };
+export type GrantView = {
+  resource: { id: string; name: string; audience: string; kind: "api" | "mcp" };
+  scopes: { id: string; name: string }[];
+};
+export type ApplicationDetail = {
+  application: ApplicationDto;
+  grants: GrantView[];
+  issuer: string;
+  tokenEndpoint: string;
+  recentTokens: TokenEventDto[];
+};
+export type ResourceWithScopes = ResourceDto & { scopes: ScopeDto[] };
+
+export function useApplicationsList(
+  tenantId: string,
+  filters: { q: string; status?: ApplicationStatusFilter },
+) {
+  return useQuery({
+    queryKey: ["applications", { tenantId, ...filters }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filters.q) params.set("q", filters.q);
+      if (filters.status) params.set("status", filters.status);
+      const qs = params.size ? `?${params}` : "";
+      return (
+        await api<{ items: ApplicationListItem[] }>(`/api/tenants/${tenantId}/applications${qs}`)
+      ).items;
+    },
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useApplicationDetail(tenantId: string, appId: string) {
+  return useQuery({
+    queryKey: ["application", { tenantId, appId }],
+    queryFn: () => api<ApplicationDetail>(`/api/tenants/${tenantId}/applications/${appId}`),
+  });
+}
+
+export function useApplicationTenantInfo(tenantId: string) {
+  return useQuery({
+    queryKey: ["application-tenant", { tenantId }],
+    queryFn: () => api<TenantDto>(`/api/tenants/${tenantId}`),
+    staleTime: 30_000,
+  });
+}
+
+/** Every tenant resource with its full scope list (list + one detail fetch per resource). */
+export function useGrantsResources(tenantId: string) {
+  const list = useQuery({
+    queryKey: ["resources", { tenantId }],
+    queryFn: () => api<ResourceDto[]>(`/api/tenants/${tenantId}/resources`),
+  });
+  const details = useQueries({
+    queries: (list.data ?? []).map((r) => ({
+      queryKey: ["resources", { tenantId, resourceId: r.id }],
+      queryFn: () => api<ResourceWithScopes>(`/api/tenants/${tenantId}/resources/${r.id}`),
+    })),
+  });
+  return {
+    isPending: list.isPending || details.some((d) => d.isPending),
+    isError: list.isError || details.some((d) => d.isError),
+    resources: details.flatMap((d) => (d.data ? [d.data] : [])),
+  };
+}
+
+function useApplicationInvalidate(tenantId: string) {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["applications"] }),
+      queryClient.invalidateQueries({ queryKey: ["application", { tenantId }] }),
+    ]);
+}
+
+export function useApplicationCreate(tenantId: string) {
+  const invalidate = useApplicationInvalidate(tenantId);
+  return useMutation({
+    mutationFn: (input: {
+      name: string;
+      description?: string;
+      tokenEndpointAuthMethod?: ApplicationDto["tokenEndpointAuthMethod"];
+      tokenTtlSeconds?: number;
+    }) =>
+      api<{ application: ApplicationDto; clientSecret: string }>(
+        `/api/tenants/${tenantId}/applications`,
+        { method: "POST", body: input },
+      ),
+    onSuccess: invalidate,
+  });
+}
+
+export function useApplicationUpdate(tenantId: string, appId: string) {
+  const invalidate = useApplicationInvalidate(tenantId);
+  return useMutation({
+    mutationFn: (input: {
+      tokenEndpointAuthMethod?: ApplicationDto["tokenEndpointAuthMethod"];
+      tokenTtlSeconds?: number | null;
+    }) =>
+      api<ApplicationDto>(`/api/tenants/${tenantId}/applications/${appId}`, {
+        method: "PATCH",
+        body: input,
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useApplicationSetStatus(tenantId: string, appId: string) {
+  const invalidate = useApplicationInvalidate(tenantId);
+  return useMutation({
+    mutationFn: (action: "enable" | "disable") =>
+      api<ApplicationDto>(`/api/tenants/${tenantId}/applications/${appId}/${action}`, {
+        method: "POST",
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useApplicationDelete(tenantId: string, appId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<void>(`/api/tenants/${tenantId}/applications/${appId}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: ["application", { tenantId, appId }] });
+      await queryClient.invalidateQueries({ queryKey: ["applications"] });
+    },
+  });
+}
+
+export function useApplicationRotateSecret(tenantId: string, appId: string) {
+  const invalidate = useApplicationInvalidate(tenantId);
+  return useMutation({
+    mutationFn: (graceSeconds: number) =>
+      api<{ clientSecret: string; previousSecretExpiresAt: string | null }>(
+        `/api/tenants/${tenantId}/applications/${appId}/rotate-secret`,
+        { method: "POST", body: { graceSeconds } },
+      ),
+    onSuccess: invalidate,
+  });
+}
+
+export function useGrantsSave(tenantId: string, appId: string) {
+  const invalidate = useApplicationInvalidate(tenantId);
+  return useMutation({
+    mutationFn: (scopeIds: string[]) =>
+      api<{ grants: GrantView[] }>(`/api/tenants/${tenantId}/applications/${appId}/grants`, {
+        method: "PUT",
+        body: { scopeIds },
+      }),
+    onSuccess: invalidate,
   });
 }

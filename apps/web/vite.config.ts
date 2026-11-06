@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig } from "vite";
 
+const apiTarget = process.env.VITE_API_TARGET ?? "http://localhost:3000";
+
 export default defineConfig({
   plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true }), react()],
   resolve: {
@@ -13,10 +15,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:3000",
-      "/t": "http://localhost:3000",
-      "/health": "http://localhost:3000",
-      "/ready": "http://localhost:3000",
+      "/api": apiTarget,
+      // Regex key: a bare "/t" prefix would also swallow the SPA routes /tenants and /t/:id/*.
+      "^/t/[^/]+/(oauth|\\.well-known)": apiTarget,
+      "/health": apiTarget,
+      "/ready": apiTarget,
     },
   },
 });
