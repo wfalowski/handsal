@@ -6,5 +6,4 @@ dist/
 *.log
 .turbo/
 .DS_Store
-drizzle/meta/
 .seed-credentials
