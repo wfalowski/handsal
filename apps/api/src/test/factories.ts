@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { applicationGrants, db, resources, scopes, tenants } from "@handsal/db";
+import { applicationGrants, db, resources, scopes, tenantMembers, tenants } from "@handsal/db";
+import type { TenantRole } from "@handsal/shared";
 import { sql } from "drizzle-orm";
+import {
+  type AdminUserCreateInput,
+  createAdminUser as createAdminUserService,
+} from "../services/admin-user.service.js";
 import {
   type ApplicationCreateInput,
   createApplication as createApplicationService,
@@ -65,4 +70,20 @@ export async function grant(tenantId: string, appId: string, scopeIds: string[])
   await db
     .insert(applicationGrants)
     .values(scopeIds.map((scopeId) => ({ tenantId, applicationId: appId, scopeId })));
+}
+
+/** Admin user with a known plaintext password (for `loginAs`). */
+export async function createAdminUser(over: Partial<AdminUserCreateInput> = {}) {
+  const password = over.password ?? `password-${uniq()}`;
+  const user = await createAdminUserService({
+    email: `admin-${uniq()}@example.com`,
+    name: "Test Admin",
+    ...over,
+    password,
+  });
+  return { user, password };
+}
+
+export async function addMember(tenantId: string, adminUserId: string, role: TenantRole) {
+  await db.insert(tenantMembers).values({ tenantId, adminUserId, role });
 }
