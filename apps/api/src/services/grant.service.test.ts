@@ -6,7 +6,7 @@ import {
   createResourceWithScopes,
   createTenant,
   truncateAll,
-} from "../test/factories.app.js";
+} from "../test/factories.js";
 import { getGrantedScopesForAudience, getGrants, replaceGrants } from "./grant.service.js";
 
 beforeAll(async () => {

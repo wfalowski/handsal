@@ -61,7 +61,7 @@ export function errorHandler(err: Error, c: Context): Response {
 
     // RFC 6749 §5.2: when client authentication fails, include WWW-Authenticate
     if (err.statusCode === 401 && err.errorCode === OAUTH_ERRORS.INVALID_CLIENT) {
-      c.header("WWW-Authenticate", 'Basic realm="oauth"');
+      c.header("WWW-Authenticate", 'Basic realm="handsal"');
     }
     c.header("Cache-Control", "no-store");
     c.header("Pragma", "no-cache");

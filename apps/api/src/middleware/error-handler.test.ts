@@ -38,7 +38,7 @@ describe("errorHandler", () => {
   it("sets WWW-Authenticate on 401 invalid_client", async () => {
     const res = await app.request("/oauth-client");
     expect(res.status).toBe(401);
-    expect(res.headers.get("WWW-Authenticate")).toBe('Basic realm="oauth"');
+    expect(res.headers.get("WWW-Authenticate")).toBe('Basic realm="handsal"');
   });
 
   it("maps ApiError to the management envelope", async () => {

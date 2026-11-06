@@ -7,7 +7,7 @@ import type {
 import { and, asc, eq, gt, ilike, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { ApiError } from "../middleware/error-handler.js";
-import { generateClientId, generateClientSecret, hashSecret } from "../utils/secrets.js";
+import { generateClientId, generateClientSecret, hashSecret } from "../utils/crypto.js";
 
 type ApplicationRow = typeof applications.$inferSelect;
 export type ApplicationCreateInput = z.infer<typeof applicationCreateSchema>;

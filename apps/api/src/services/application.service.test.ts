@@ -9,8 +9,8 @@ import {
   createTenant,
   grant,
   truncateAll,
-} from "../test/factories.app.js";
-import { verifySecret } from "../utils/secrets.js";
+} from "../test/factories.js";
+import { verifySecret } from "../utils/crypto.js";
 import {
   deleteApplication,
   getApplication,

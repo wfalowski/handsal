@@ -2,7 +2,7 @@ import { applications, db, type tenants } from "@handsal/db";
 import { OAUTH_ERRORS } from "@handsal/shared";
 import { and, eq } from "drizzle-orm";
 import { OAuthError } from "../middleware/error-handler.js";
-import { hashSecret, verifySecret } from "../utils/secrets.js";
+import { hashSecret, verifySecret } from "../utils/crypto.js";
 import { logSecurityEvent, SecurityEvent, SecuritySeverity } from "../utils/security-logger.js";
 
 type Tenant = typeof tenants.$inferSelect;

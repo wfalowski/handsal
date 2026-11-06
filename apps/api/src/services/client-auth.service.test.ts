@@ -3,7 +3,7 @@ import { OAUTH_ERRORS } from "@handsal/shared";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { OAuthError } from "../middleware/error-handler.js";
-import { createApplication, createTenant, truncateAll } from "../test/factories.app.js";
+import { createApplication, createTenant, truncateAll } from "../test/factories.js";
 import { rotateSecret, setApplicationStatus } from "./application.service.js";
 import { authenticateClient } from "./client-auth.service.js";
 
