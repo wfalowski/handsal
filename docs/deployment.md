@@ -152,10 +152,15 @@ Revoking a token (`/oauth/revoke`), "revoke all" (application or tenant), disabl
 
 `ENABLE_ADMIN_PANEL=false` serves only the OAuth endpoints, `/health` and `/ready`; the admin UI is not served and `/api/*` answers `404 {"error":"not_found"}`. Create tenants, resources and applications first with the panel enabled, either before switching or in a second, private instance that uses the same database and the same `KEY_ENCRYPTION_SECRET`. A common layout is a public headless issuer plus an internal admin instance.
 
+## Outbound URLs
+
+`approvalWebhookUrl` and `externalIdp.jwksUri` are tenant settings the server fetches or posts to. In production they must be `https`, and literal loopback, link-local, RFC 1918 and unique-local addresses, `localhost`, `*.localhost`, `*.internal` and `*.local` are rejected with `400 validation_error`; outside production `http` and these addresses are allowed for local development. The guard checks the URL, not the resolved address, so DNS rebinding is not covered: restrict egress at the network level if tenant admins are not trusted. JWKS fetches do not follow redirects and the JWKS cache holds at most 100 entries.
+
 ## Observability
 
 - Logs are pino JSON on stdout (`LOG_LEVEL`, default `info`); each request is logged, and an `X-Request-Id` header is accepted or generated and echoed back.
 - Security events carry `"security": true`, `"module": "security"`, an `event` name and a `severity` (`LOW` logs as info, `MEDIUM`/`HIGH` as warn, `CRITICAL` as fatal). Events: `client_auth_failure`, `admin_login_failure`, `admin_login_success`, `admin_logout`, `admin_auth_failure`, `rate_limit_exceeded`, `invalid_scope_request`, `malformed_request`, `unsupported_grant_type`. Failure logs include `reason` (`unknown_client`, `auth_method_mismatch`, `bad_secret`, `client_disabled`, and for `private_key_jwt` `bad_assertion`, `unknown_assertion_key`, `assertion_expired`, `assertion_replayed`) that is never returned to the caller. Alert on bursts of `client_auth_failure` and `rate_limit_exceeded`.
 - The token log (UI "Tokens", `GET /api/tenants/:tenantId/token-events`) records issued, denied and revoked events with reason, scopes, `jti` and source IP.
-- Background jobs (key rotation and retirement hourly, revoked-token purge hourly, token-log retention daily) run in-process and log failures as `Job failed`.
+- Background jobs (key rotation and retirement hourly, revoked-token purge hourly, token-log retention daily, approval expiry and retention hourly) run in-process and log failures as `Job failed`.
+- Resolved approvals are deleted after 30 days by the hourly `approval-retention` job (1000 rows per run); expired pending approvals are marked by `approval-expiry`.
 - Shutdown on `SIGTERM` is graceful (10 s limit).

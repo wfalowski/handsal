@@ -1002,6 +1002,14 @@ Where the shipped code differs from this note (the code is the reference; see [a
 - Auto-approve needs a matching rule for every approval scope in the request; one rule never covers another scope.
 - A rule-approved row still goes through one poll, and that response carries `interval: 0`.
 - Redemption re-runs the CIDR, scope ceiling, budget and `agent_policy` checks, not only the grant check.
-- `approval_requests` has a pending cap per application (20) and a 30-day retention job.
+- `approval_requests` has a pending cap per application (20, `access_denied` reason `approval_queue_full`) and a 30-day retention job (`approval-retention`, hourly, 1000 rows per tick); the expiry job also works in 1000-row batches.
+- Poll requests with `resource`, `scope` or `task_id` are `invalid_request`; CIDR and budget run before the claim, so a refused poll does not consume the approval; a demoted or deleted scope is `invalid_grant` with reason `policy_changed`.
+- Denied and expired poll events carry the row's audience and scopes; the issued event has reason `approval`.
+- Reusing an existing row matches scopes, `task_id`, `actor_hint` and `justification`, and also reuses an approved-but-unredeemed row.
+- `decidedBy.label` is snapshotted at decision time (`decided_by_label`), so deleted users and rules keep their name.
+- A Handsal subject token's `aud` must equal the exchange `resource`; issued tokens carry `sub_kind`, from which `mayActFor` is classified (`users` for `user`, `services`/`tenant` for `service`, `tenant` for `agent`); an external IdP's `act` is never propagated; `act` nesting is capped at 3 (`act_chain_too_deep`).
+- External IdP tokens need `exp`, are verified with 5 s tolerance and the algorithms RS256/PS256/ES256/ES384/EdDSA; JWKS fetches do not follow redirects and the cache holds 100 entries.
+- `approvalWebhookUrl` and `externalIdp.jwksUri` go through an outbound URL guard (https and no internal hosts in production; checks the URL, not the resolved address).
+- Rules: a `task_id_prefix`-only condition is `invalid_rule_condition`; a rule on a scope whose `agent_policy` is not `approval` is `scope_not_approval`.
 - The admin UI ships a webhook settings form (the note assumed API-only).
 - Auto-approve rules are API-only; there is no UI.

@@ -379,7 +379,7 @@ curl -s https://auth.example.com/t/acme/oauth/token \
 
 ### Auto-approve rules
 
-A rule lets a known-safe pattern skip the human. It is tied to one `approval` scope and has an optional condition (all keys ANDed): `application_ids`, `task_id_prefix`, `max_scopes`. `task_id` is asserted by the agent and is not an authorization boundary: a rule keyed on `task_id_prefix` alone is rejected, so pair it with `application_ids`. A request is auto-approved only when every `approval` scope in it is covered by a matching rule. Rules are managed through the API only:
+A rule lets a known-safe pattern skip the human. It is tied to one `approval` scope and has an optional condition (all keys ANDed): `application_ids`, `task_id_prefix`, `max_scopes`. `task_id` is asserted by the agent and is not an authorization boundary: a rule keyed on `task_id_prefix` alone is rejected, so pair it with `application_ids` (`400 invalid_rule_condition`). A rule can only be created on a scope whose `agent_policy` is `approval` (`400 scope_not_approval`). A request is auto-approved only when every `approval` scope in it is covered by a matching rule. Rules are managed through the API only:
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
@@ -434,7 +434,7 @@ When an agent acts on behalf of someone, the resource server should see both who
 |---|---|
 | `users` | JWTs of the tenant's external IdP (your login provider), see below |
 | `services` | Handsal access tokens issued to `service` applications of this tenant |
-| `tenant` | Any Handsal access token of this tenant, agents included, except tokens whose chain started with a user (`sub_kind=user` needs `users`); a token that already has an `act` keeps it, nested under the new one (at most 3 levels) |
+| `tenant` | Any Handsal access token of this tenant, agents included, except tokens whose chain started with a user (`sub_kind=user` needs `users`); a token that already has an `act` keeps it, nested under the new one (at most 3 levels, deeper is `invalid_grant`) |
 
 An empty list (the default) disables exchange for the application. The application also needs a grant on the target `resource`, and a Handsal subject token must have been issued for that same `resource` (`aud`); it cannot be rebound to another API.
 
@@ -448,7 +448,7 @@ curl -s -X PATCH -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: app
   https://auth.example.com/api/tenants/$TENANT_ID
 ```
 
-Handsal checks the signature against `jwksUri` (https only, no internal addresses, redirects not followed, keys cached; `RS256`, `PS256`, `ES256`, `ES384` or `EdDSA`), `iss` = `issuer`, `aud` contains `audience`, `exp` (required, 5 s tolerance), and requires a `sub`. An `act` claim in the IdP token is ignored. One IdP per tenant; `null` removes it.
+Handsal checks the signature against `jwksUri` (https and no internal addresses in production, see [deployment](deployment.md#outbound-urls); redirects not followed, keys cached; `RS256`, `PS256`, `ES256`, `ES384` or `EdDSA`), `iss` = `issuer`, `aud` contains `audience`, `exp` (required, 5 s tolerance), and requires a `sub`. An `act` claim in the IdP token is ignored. One IdP per tenant; `null` removes it.
 
 **Exchange:**
 
