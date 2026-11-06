@@ -150,6 +150,17 @@ describe("token request path", () => {
     expect(payload.tenant.slug).toBe(s.tenant.slug);
   });
 
+  it("reusing an identical pending request does not re-fire the webhook", async () => {
+    const s = await agentSetup(hookUrl());
+    const a = await s.request("run-5");
+    const b = await s.request("run-5");
+    expect(b.approvalId).toBe(a.approvalId);
+    await vi.waitFor(() => expect(received).toHaveLength(1));
+    // A second delivery to the local receiver would land well within this window.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(received).toHaveLength(1);
+  });
+
   it("no webhook is sent for a rule-approved row", async () => {
     const s = await agentSetup(hookUrl());
     await createApprovalRule(s.tenant.id, s.scope.id);

@@ -1,0 +1,2 @@
+ALTER TABLE "approval_requests" ADD COLUMN "decided_by_label" text;--> statement-breakpoint
+CREATE INDEX "idx_approval_requests_tenant_decided_at" ON "approval_requests" USING btree ("tenant_id","decided_at");

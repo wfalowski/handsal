@@ -1,10 +1,10 @@
 import { adminUsers, applications, approvalRequests, approvalRules, db, scopes } from "@handsal/db";
 import type { ApprovalCountsDto, ApprovalDto, approvalsQuerySchema } from "@handsal/shared";
-import { DEFAULTS } from "@handsal/shared";
-import { and, desc, eq, gt, inArray, lte, type SQL, sql } from "drizzle-orm";
+import { DEFAULTS, OAUTH_ERRORS } from "@handsal/shared";
+import { and, count, desc, eq, gt, inArray, lt, lte, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import type { Actor } from "../middleware/admin-auth.js";
-import { ApiError } from "../middleware/error-handler.js";
+import { ApiError, OAuthError } from "../middleware/error-handler.js";
 import { createLogger } from "../utils/logger.js";
 import { countApprovalRules, findMatchingRule } from "./approval-rule.service.js";
 import { notifyApprovalPending } from "./approval-webhook.service.js";
@@ -19,9 +19,9 @@ export type ApprovalRow = typeof approvalRequests.$inferSelect;
 
 /**
  * Open (or reuse) a pending approval for an agent token request and record a `pending` token
- * event. Returns the approval id the agent polls with. When every approval scope of the request
- * has a matching auto-approve rule the row is created already `approved` (the agent still polls
- * once); otherwise it is `pending` and the tenant webhook is notified.
+ * event. Returns the approval id the agent polls with and the row status. When every approval
+ * scope of the request has a matching auto-approve rule the row is created already `approved`
+ * (the agent still polls once); otherwise it is `pending` and the tenant webhook is notified.
  */
 export async function createApprovalRequest(
   tenant: Tenant,
@@ -35,29 +35,37 @@ export async function createApprovalRequest(
     justification?: string;
   },
   ctx: { sourceIp: string },
-): Promise<string> {
+): Promise<{ approvalId: string; status: "pending" | "approved" }> {
   const taskId = request.taskId ?? null;
+  const actorHint = request.actorHint ?? null;
+  const justification = request.justification ?? null;
   // An agent re-sending the original request instead of polling keeps one card in the queue.
   // shortcut: two concurrent first requests can still create two rows; harmless, a partial unique index would make it exact.
   const [existing] = await db
-    .select({ id: approvalRequests.id })
+    .select({ id: approvalRequests.id, status: approvalRequests.status })
     .from(approvalRequests)
     .where(
       and(
         eq(approvalRequests.tenantId, tenant.id),
         eq(approvalRequests.applicationId, application.id),
         eq(approvalRequests.resourceId, request.resourceId),
-        eq(approvalRequests.status, "pending"),
+        // A live pending row, or an approved one (e.g. by a rule) not yet redeemed.
+        sql`(${approvalRequests.status} = 'pending' or (${approvalRequests.status} = 'approved' and ${approvalRequests.consumedAt} is null))`,
         gt(approvalRequests.expiresAt, sql`now()`),
         sql`${approvalRequests.scopes} = ${sql.param(request.scopes, approvalRequests.scopes)}`,
         sql`${approvalRequests.taskId} is not distinct from ${taskId}`,
+        // The human consents to the story shown on the card: a changed story opens a new card.
+        sql`${approvalRequests.actorHint} is not distinct from ${actorHint}`,
+        sql`${approvalRequests.justification} is not distinct from ${justification}`,
       ),
     )
     .limit(1);
-  if (existing) return existing.id;
+  if (existing?.status === "pending" || existing?.status === "approved") {
+    return { approvalId: existing.id, status: existing.status };
+  }
 
   const approvalScopes = await db
-    .select({ id: scopes.id })
+    .select({ id: scopes.id, name: scopes.name })
     .from(scopes)
     .where(
       and(
@@ -73,6 +81,27 @@ export async function createApprovalRequest(
     { applicationId: application.id, taskId, scopeCount: request.scopes.length },
   );
 
+  // Rule-approved rows never reach the human queue, so only the human path is capped.
+  if (!rule) {
+    // shortcut: count and insert are not serialised, so concurrent requests can overshoot by the in-flight count.
+    const [{ live }] = await db
+      .select({ live: count() })
+      .from(approvalRequests)
+      .where(
+        and(
+          eq(approvalRequests.tenantId, tenant.id),
+          eq(approvalRequests.applicationId, application.id),
+          eq(approvalRequests.status, "pending"),
+          gt(approvalRequests.expiresAt, sql`now()`),
+        ),
+      );
+    if (live >= DEFAULTS.APPROVAL_MAX_PENDING_PER_APPLICATION) {
+      const err = new OAuthError(OAUTH_ERRORS.ACCESS_DENIED, 400, "Too many pending approvals");
+      err.reason = "approval_queue_full";
+      throw err;
+    }
+  }
+
   const [row] = await db
     .insert(approvalRequests)
     .values({
@@ -81,11 +110,16 @@ export async function createApprovalRequest(
       resourceId: request.resourceId,
       audience: request.audience,
       scopes: request.scopes,
-      actorHint: request.actorHint ?? null,
+      actorHint,
       taskId,
-      justification: request.justification ?? null,
+      justification,
       expiresAt: sql`now() + make_interval(secs => ${DEFAULTS.APPROVAL_TTL_SECONDS})`,
-      ...(rule && { status: "approved" as const, decidedByRuleId: rule.id, decidedAt: sql`now()` }),
+      ...(rule && {
+        status: "approved" as const,
+        decidedByRuleId: rule.id,
+        decidedByLabel: `rule: ${approvalScopes.find((s) => s.id === rule.scopeId)?.name}`,
+        decidedAt: sql`now()`,
+      }),
     })
     .returning();
 
@@ -113,7 +147,7 @@ export async function createApprovalRequest(
       }),
     );
   }
-  return row.id;
+  return { approvalId: row.id, status: rule ? "approved" : "pending" };
 }
 
 /**
@@ -189,12 +223,14 @@ function toDto({
   ruleScopeName,
 }: DtoRow): ApprovalDto {
   let decidedBy: ApprovalDto["decidedBy"] = null;
-  if (deciderName !== null) decidedBy = { kind: "user", label: deciderName };
+  // decided_by_label wins when set; the joins only cover rows decided before the column existed.
+  if (deciderName !== null) decidedBy = { kind: "user", label: a.decidedByLabel ?? deciderName };
   else if (a.decidedByRuleId !== null)
-    decidedBy = { kind: "rule", label: `rule: ${ruleScopeName}` };
-  // shortcut: a deleted rule nulls decided_by_rule_id, so its rows then read as "API key"; keep a rule label column if that matters.
-  // A decision with no user is the ADMIN_API_KEY actor (expiry never sets decided_at).
-  else if (a.decidedAt !== null) decidedBy = { kind: "api-key", label: "API key" };
+    decidedBy = { kind: "rule", label: a.decidedByLabel ?? `rule: ${ruleScopeName}` };
+  // No surviving user or rule id: the ADMIN_API_KEY actor, or a deleted user / rule (kind then
+  // reads "api-key", but the stored label keeps who decided). Expiry never sets decided_at.
+  else if (a.decidedAt !== null)
+    decidedBy = { kind: "api-key", label: a.decidedByLabel ?? "API key" };
   return {
     id: a.id,
     applicationId: a.applicationId,
@@ -242,6 +278,8 @@ function selectDtos() {
 export async function getApprovalCounts(tenantId: string): Promise<ApprovalCountsDto> {
   const live = sql`${approvalRequests.status} = 'pending' and ${approvalRequests.expiresAt} > now()`;
   const decided24h = sql`${approvalRequests.decidedAt} >= now() - interval '24 hours'`;
+  // Bound the scan to the union the filters need, not the tenant's whole history.
+  const window = sql`((${live}) or ${decided24h})`;
   const [[row], rules] = await Promise.all([
     db
       .select({
@@ -262,7 +300,7 @@ export async function getApprovalCounts(tenantId: string): Promise<ApprovalCount
         >`percentile_cont(0.5) within group (order by extract(epoch from (${approvalRequests.decidedAt} - ${approvalRequests.createdAt}))) filter (where ${decided24h})`,
       })
       .from(approvalRequests)
-      .where(eq(approvalRequests.tenantId, tenantId)),
+      .where(and(eq(approvalRequests.tenantId, tenantId), window)),
     countApprovalRules(tenantId),
   ]);
   return {
@@ -330,6 +368,7 @@ export async function decideApproval(
     .set({
       status: decision,
       decidedBy: actor.kind === "user" ? actor.userId : null,
+      decidedByLabel: actor.kind === "user" ? actor.name : "API key",
       decidedAt: sql`now()`,
     })
     .where(
@@ -354,15 +393,44 @@ export async function decideApproval(
   return toDto(row);
 }
 
-/** Mark overdue pending approvals expired (all tenants). Returns the updated count. */
+const JOB_BATCH = 1000;
+
+/** Mark overdue pending approvals expired (all tenants), at most 1000 per run. Returns the updated count. */
 export async function expirePendingApprovals(): Promise<number> {
+  const overdue = and(
+    eq(approvalRequests.status, "pending"),
+    lte(approvalRequests.expiresAt, sql`now()`),
+  );
+  const batch = db
+    .select({ id: approvalRequests.id })
+    .from(approvalRequests)
+    .where(overdue)
+    .limit(JOB_BATCH);
   const result = await db
     .update(approvalRequests)
     .set({ status: "expired" })
-    .where(
-      and(eq(approvalRequests.status, "pending"), lte(approvalRequests.expiresAt, sql`now()`)),
-    );
+    // Re-checked: a row decided between the subselect and the update stays decided.
+    .where(and(inArray(approvalRequests.id, batch), overdue));
   const expired = result.rowCount ?? 0;
   if (expired > 0) logger.info({ expired }, "Expired pending approvals");
   return expired;
+}
+
+/** Delete resolved approvals (all tenants) older than `retentionDays`, at most 1000 per run. */
+export async function purgeResolvedApprovals(retentionDays: number): Promise<number> {
+  const batch = db
+    .select({ id: approvalRequests.id })
+    .from(approvalRequests)
+    .where(
+      and(
+        inArray(approvalRequests.status, ["approved", "denied", "expired"]),
+        // expires_at is never before decided_at (only live rows are decided), so it covers both.
+        lt(approvalRequests.expiresAt, sql`now() - make_interval(days => ${retentionDays})`),
+      ),
+    )
+    .limit(JOB_BATCH);
+  const result = await db.delete(approvalRequests).where(inArray(approvalRequests.id, batch));
+  const deleted = result.rowCount ?? 0;
+  if (deleted > 0) logger.info({ deleted, retentionDays }, "Purged resolved approvals");
+  return deleted;
 }

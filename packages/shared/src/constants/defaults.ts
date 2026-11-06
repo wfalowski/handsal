@@ -12,6 +12,9 @@ export const DEFAULTS = {
   APPROVALS_PAGE_SIZE: 50,
   // A rule-approved request polls immediately.
   APPROVAL_RULE_POLL_INTERVAL_SECONDS: 0,
+  // Live pending approvals one application may hold; resolved rows are purged after this many days.
+  APPROVAL_MAX_PENDING_PER_APPLICATION: 20,
+  APPROVAL_RETENTION_DAYS: 30,
 } as const;
 
 // Approval notification webhook (Task 6.5): one retry on network error or 5xx, never on 4xx.

@@ -1,5 +1,6 @@
 // Integration test: real Postgres, no HTTP app.
 import {
+  adminUsers,
   applicationGrants,
   applications,
   approvalRequests,
@@ -14,6 +15,7 @@ import { decodeJwt } from "jose";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { OAuthError } from "../middleware/error-handler.js";
 import {
+  createAdminUser,
   createApplication,
   createApprovalRequest,
   createApprovalRule,
@@ -121,6 +123,44 @@ describe("approval requests", () => {
     // A different task opens its own card.
     const c = await requestWrite(s, { taskId: "other" });
     expect(c.approvalId).not.toBe(a.approvalId);
+    // So does a different story: the human consents to the text on the card.
+    const d = await requestWrite(s, { justification: "something else" });
+    const e = await requestWrite(s, { actorHint: "bob@example.com" });
+    expect(new Set([a.approvalId, d.approvalId, e.approvalId]).size).toBe(3);
+  });
+
+  it("caps live pending approvals per application", async () => {
+    const s = await setup();
+    for (let i = 0; i < 20; i++) {
+      await createApprovalRequest(s.tenant.id, s.app.id, s.resource.id, { taskId: `t-${i}` });
+    }
+    expect(await reasonOf(requestWrite(s))).toMatchObject({
+      code: "access_denied",
+      reason: "approval_queue_full",
+    });
+    // Expired rows do not count.
+    await db
+      .update(approvalRequests)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(approvalRequests.taskId, "t-0"));
+    expect((await requestWrite(s)).status).toBe("pending");
+  });
+
+  it("decided_by_label keeps the decider's name after the user is deleted", async () => {
+    const s = await setup();
+    const { user } = await createAdminUser({ name: "Jane Admin" });
+    const { approvalId } = await requestWrite(s);
+    const actor = {
+      kind: "user",
+      userId: user.id,
+      email: user.email,
+      name: user.name,
+      isSuperAdmin: false,
+    } as const;
+    await decideApproval(s.tenant.id, approvalId, "approved", actor);
+    await db.delete(adminUsers).where(eq(adminUsers.id, user.id));
+    const list = await listApprovals(s.tenant.id, { status: "resolved", limit: 50 });
+    expect(list.items[0].decidedBy?.label).toBe("Jane Admin");
   });
 
   it("mixed auto and approval scopes go pending as a whole", async () => {
@@ -185,7 +225,10 @@ describe("redeemApproval", () => {
   it("pending → marker; redeem issues exactly one token", async () => {
     const s = await setup();
     const { approvalId } = await requestWrite(s, { taskId: "run-9" });
-    expect(await redeemApproval(s.tenant, s.app, approvalId, ctx)).toEqual({ approvalId });
+    expect(await redeemApproval(s.tenant, s.app, approvalId, ctx)).toEqual({
+      approvalId,
+      status: "pending",
+    });
 
     await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
     const first = (await redeemApproval(s.tenant, s.app, approvalId, ctx)) as TokenResponse;
@@ -200,7 +243,64 @@ describe("redeemApproval", () => {
     });
     const issued = await db.select().from(tokenEvents).where(eq(tokenEvents.outcome, "issued"));
     expect(issued).toHaveLength(1);
-    expect(issued[0].taskId).toBe("run-9");
+    expect(issued[0]).toMatchObject({ taskId: "run-9", reason: "approval" });
+  });
+
+  it("scope demoted to never or ceiling lowered during the window → denied", async () => {
+    const s = await setup();
+    const { approvalId } = await requestWrite(s);
+    await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
+    await db.update(scopes).set({ agentPolicy: "never" }).where(eq(scopes.id, s.scopes[2].id));
+    expect(await reasonOf(redeemApproval(s.tenant, s.app, approvalId, ctx))).toMatchObject({
+      code: "invalid_grant",
+      reason: "policy_changed",
+    });
+
+    await db.update(scopes).set({ agentPolicy: "approval" }).where(eq(scopes.id, s.scopes[2].id));
+    const next = await requestWrite(s, { taskId: "t-2" });
+    await decideApproval(s.tenant.id, next.approvalId, "approved", apiKey);
+    const capped = { ...s.app, maxScopesPerToken: 0 };
+    expect(await reasonOf(redeemApproval(s.tenant, capped, next.approvalId, ctx))).toMatchObject({
+      code: "invalid_scope",
+      reason: "scope_ceiling",
+    });
+  });
+
+  it("source outside allowed_cidrs → unauthorized_client, approval not consumed", async () => {
+    const s = await setup();
+    const { approvalId } = await requestWrite(s);
+    await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
+    const pinned = { ...s.app, allowedCidrs: ["10.0.0.0/8"] };
+    expect(await reasonOf(redeemApproval(s.tenant, pinned, approvalId, ctx))).toMatchObject({
+      code: "unauthorized_client",
+      reason: "cidr_denied",
+    });
+    const inside = { sourceIp: "10.1.2.3" };
+    expect(await redeemApproval(s.tenant, pinned, approvalId, inside)).toHaveProperty(
+      "access_token",
+    );
+  });
+
+  it("hourly budget spent → 429 budget_exhausted with Retry-After", async () => {
+    const s = await setup();
+    const { approvalId } = await requestWrite(s);
+    await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
+    const budgeted = { ...s.app, tokenBudgetPerHour: 1 };
+    await issueToken(
+      s.tenant,
+      budgeted,
+      { audience: AUD, requestedScopes: ["payments:read"] },
+      ctx,
+    );
+    const err = (await redeemApproval(s.tenant, budgeted, approvalId, ctx).catch(
+      (e) => e,
+    )) as OAuthError;
+    expect(err).toMatchObject({
+      errorCode: "too_many_requests",
+      statusCode: 429,
+      reason: "budget_exhausted",
+    });
+    expect(err.retryAfterSeconds).toBeGreaterThan(0);
   });
 
   it("concurrent polls: only one wins", async () => {
@@ -285,6 +385,18 @@ describe("auto-approve rules", () => {
     const list = await listApprovals(s.tenant.id, { status: "resolved", limit: 50 });
     expect(list.items[0].decidedBy).toEqual({ kind: "rule", label: "rule: payments:write" });
     expect(list.counts.rules).toBe(1);
+  });
+
+  it("a re-sent request reuses the unredeemed rule-approved row", async () => {
+    const s = await setup();
+    await createApprovalRule(s.tenant.id, write(s).id);
+    const a = await requestWrite(s);
+    const b = await requestWrite(s);
+    expect(b).toEqual({ approvalId: a.approvalId, status: "approved" });
+    expect(await db.select().from(approvalRequests)).toHaveLength(1);
+    // Once redeemed, the same request opens a new row.
+    await redeemApproval(s.tenant, s.app, a.approvalId, ctx);
+    expect((await requestWrite(s)).approvalId).not.toBe(a.approvalId);
   });
 
   it("the rule-approved row still issues exactly once", async () => {

@@ -46,6 +46,8 @@ export const approvalRequests = pgTable(
     decidedByRuleId: uuid("decided_by_rule_id").references(() => approvalRules.id, {
       onDelete: "set null",
     }),
+    // Who decided, as shown at decision time: survives deletion of the user or rule.
+    decidedByLabel: text("decided_by_label"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -57,6 +59,7 @@ export const approvalRequests = pgTable(
   (t) => [
     index("idx_approval_requests_tenant_status").on(t.tenantId, t.status, t.createdAt.desc()),
     index("idx_approval_requests_application_id").on(t.applicationId),
+    index("idx_approval_requests_tenant_decided_at").on(t.tenantId, t.decidedAt),
     // Same-tenant invariants plus cascade on application / resource delete.
     foreignKey({
       columns: [t.tenantId, t.applicationId],

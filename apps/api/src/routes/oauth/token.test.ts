@@ -6,7 +6,7 @@ import {
   scopes as scopesTable,
   tokenEvents,
 } from "@handsal/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -18,6 +18,7 @@ import { ensureActiveKey, getJwks } from "../../services/signing-key.service.js"
 import {
   createApplication,
   createApplicationKey,
+  createApprovalRule,
   createResourceWithScopes,
   createTenant,
   grant,
@@ -802,6 +803,59 @@ describe("approval grant", () => {
     const auto = await s.request({ scope: "payments:read" });
     expect(auto.status).toBe(200);
     expect(await db.select().from(approvalRequests)).toHaveLength(0);
+  });
+
+  it("poll with resource, scope or task_id → invalid_request", async () => {
+    const s = await agentSetup();
+    const { approval_id } = await (await s.request({ scope: "payments:write" })).json();
+    await approve(approval_id);
+    const extras: Record<string, string>[] = [
+      { resource: PAYMENTS },
+      { scope: "payments:write" },
+      { task_id: "t" },
+    ];
+    for (const extra of extras) {
+      const res = await formRequest(
+        app,
+        tokenUrl(s.tenant.slug),
+        { grant_type: APPROVAL, approval_id, ...extra },
+        s.auth,
+      );
+      expect(await res.json()).toEqual({
+        error: "invalid_request",
+        error_description: "resource, scope and task_id are taken from the approval",
+      });
+    }
+    // Rejected before redemption: the approval is still usable.
+    expect((await s.poll(approval_id)).status).toBe(200);
+  });
+
+  it("a denied poll records the row's audience and scopes", async () => {
+    const s = await agentSetup();
+    const { approval_id } = await (await s.request({ scope: "payments:write" })).json();
+    await db
+      .update(approvalRequests)
+      .set({ status: "denied" })
+      .where(eq(approvalRequests.id, approval_id));
+    await s.poll(approval_id);
+    const [denied] = (await events()).filter((e) => e.outcome === "denied");
+    expect(denied).toMatchObject({
+      reason: "approval_denied",
+      audience: PAYMENTS,
+      scopes: ["payments:write"],
+    });
+  });
+
+  it("a rule-approved request answers interval 0", async () => {
+    const s = await agentSetup();
+    const [write] = await db
+      .select()
+      .from(scopesTable)
+      .where(and(eq(scopesTable.tenantId, s.tenant.id), eq(scopesTable.name, "payments:write")));
+    await createApprovalRule(s.tenant.id, write.id);
+    const body = await (await s.request({ scope: "payments:write" })).json();
+    expect(body).toMatchObject({ error: "authorization_pending", interval: 0 });
+    expect((await s.poll(body.approval_id)).status).toBe(200);
   });
 });
 

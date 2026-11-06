@@ -18,7 +18,7 @@ import {
   authenticateClient,
   authenticateClientAssertion,
 } from "../../services/client-auth.service.js";
-import { issueToken, redeemApproval } from "../../services/token.service.js";
+import { issueToken, type PendingApproval, redeemApproval } from "../../services/token.service.js";
 import { recordTokenEvent } from "../../services/token-event.service.js";
 import { exchangeToken } from "../../services/token-exchange.service.js";
 import { getClientIp } from "../../utils/client-ip.js";
@@ -132,13 +132,16 @@ export function createTokenRoutes({
       const clientId =
         basic?.clientId ?? body?.client_id ?? assertionClientId(body?.client_assertion);
       let application: AuthenticatedApplication | undefined;
-      const pending = (approvalId: string) =>
+      const pending = ({ approvalId, status }: PendingApproval) =>
         c.json(
           {
             error: OAUTH_ERRORS.AUTHORIZATION_PENDING,
             error_description: "Waiting for human approval of one or more requested scopes",
             approval_id: approvalId,
-            interval: DEFAULTS.APPROVAL_POLL_INTERVAL_SECONDS,
+            interval:
+              status === "approved"
+                ? DEFAULTS.APPROVAL_RULE_POLL_INTERVAL_SECONDS
+                : DEFAULTS.APPROVAL_POLL_INTERVAL_SECONDS,
           },
           400,
         );
@@ -161,12 +164,19 @@ export function createTokenRoutes({
         c.header("Pragma", "no-cache");
 
         if (body.grant_type === GRANT_TYPES.APPROVAL) {
+          if (
+            body.resource !== undefined ||
+            body.scope !== undefined ||
+            body.task_id !== undefined
+          ) {
+            throw invalidRequest("resource, scope and task_id are taken from the approval");
+          }
           const grant = approvalGrantSchema.safeParse(body);
           if (!grant.success) throw invalidRequest("approval_id is missing or invalid");
           const response = await redeemApproval(tenant, application, grant.data.approval_id, {
             sourceIp,
           });
-          return "approvalId" in response ? pending(response.approvalId) : c.json(response);
+          return "approvalId" in response ? pending(response) : c.json(response);
         }
 
         // A missing or malformed resource is invalid_target, not a generic schema failure.
@@ -223,17 +233,17 @@ export function createTokenRoutes({
           { sourceIp },
         );
         // Returned, not thrown: the body carries approval_id/interval and the event is `pending`.
-        return "approvalId" in response ? pending(response.approvalId) : c.json(response);
+        return "approvalId" in response ? pending(response) : c.json(response);
       } catch (err) {
         if (err instanceof OAuthError) {
           await recordTokenEvent({
             tenantId: tenant.id,
             applicationId: application?.id ?? null,
             applicationClientId: clientId?.slice(0, 32) ?? null,
-            audience: body?.resource?.slice(0, 512) ?? null,
+            audience: (err.eventTarget?.audience ?? body?.resource)?.slice(0, 512) ?? null,
             outcome: "denied",
             reason: (err.reason ?? err.errorCode).slice(0, 64),
-            scopes: splitScopes(body?.scope),
+            scopes: err.eventTarget?.scopes ?? splitScopes(body?.scope),
             sourceIp: sourceIp.slice(0, 45),
             taskId: body?.task_id?.slice(0, 128) ?? null,
           });

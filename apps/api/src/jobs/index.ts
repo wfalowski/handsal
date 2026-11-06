@@ -1,5 +1,6 @@
 import { createLogger } from "../utils/logger.js";
 import { approvalExpiryJob } from "./approval-expiry.job.js";
+import { approvalRetentionJob } from "./approval-retention.job.js";
 import { keyRotationJob } from "./key-rotation.job.js";
 import { revokedCleanupJob } from "./revoked-cleanup.job.js";
 import { tokenEventsRetentionJob } from "./token-events-retention.job.js";
@@ -13,7 +14,13 @@ export interface Job {
 }
 
 // Register interval jobs here.
-const jobs: Job[] = [keyRotationJob, tokenEventsRetentionJob, revokedCleanupJob, approvalExpiryJob];
+const jobs: Job[] = [
+  keyRotationJob,
+  tokenEventsRetentionJob,
+  revokedCleanupJob,
+  approvalExpiryJob,
+  approvalRetentionJob,
+];
 
 const timers: ReturnType<typeof setInterval>[] = [];
 

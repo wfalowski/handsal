@@ -43,6 +43,13 @@
       "when": 1793953733872,
       "tag": "0005_great_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793955003759,
+      "tag": "0006_misty_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,8 @@ export interface TokenResponse {
 /** The request needs a human: the agent polls the token endpoint with this id. */
 export interface PendingApproval {
   approvalId: string;
+  /** `approved` when an auto-approve rule decided at once: the agent may poll immediately. */
+  status: "pending" | "approved";
 }
 
 export function deny(code: string, description: string, reason: string): never {
@@ -42,7 +44,18 @@ export async function enforceAgentGuardrails(
   sourceIp: string,
 ): Promise<void> {
   if (application.kind !== "agent") return;
+  enforceSourceCidr(tenant, application, sourceIp);
+  enforceScopeCeiling(application, tokenScopes.length);
+  await enforceTokenBudget(tenant, application);
+}
 
+/** Agent guardrail: the source address must be inside `allowed_cidrs`. No-op for services. */
+export function enforceSourceCidr(
+  tenant: Tenant,
+  application: AuthenticatedApplication,
+  sourceIp: string,
+): void {
+  if (application.kind !== "agent") return;
   let ipAllowed: boolean;
   try {
     ipAllowed = ipInCidrs(sourceIp, application.allowedCidrs);
@@ -54,16 +67,25 @@ export async function enforceAgentGuardrails(
   if (!ipAllowed) {
     deny(OAUTH_ERRORS.UNAUTHORIZED_CLIENT, "Source address is not allowed", "cidr_denied");
   }
+}
 
+function enforceScopeCeiling(application: AuthenticatedApplication, scopeCount: number): void {
   // shortcut: with `scope` omitted the whole grant counts, so an over-granted agent must request explicitly (intended least-privilege nudge).
   if (
+    application.kind === "agent" &&
     application.maxScopesPerToken !== null &&
-    tokenScopes.length > application.maxScopesPerToken
+    scopeCount > application.maxScopesPerToken
   ) {
     deny(OAUTH_ERRORS.INVALID_SCOPE, "Too many scopes requested for one token", "scope_ceiling");
   }
+}
 
-  if (application.tokenBudgetPerHour !== null) {
+/** Agent guardrail: 429 with Retry-After once the hourly token budget is spent. No-op for services. */
+export async function enforceTokenBudget(
+  tenant: Tenant,
+  application: AuthenticatedApplication,
+): Promise<void> {
+  if (application.kind === "agent" && application.tokenBudgetPerHour !== null) {
     // shortcut: read is not serialised with the insert, so concurrent requests can overshoot by the in-flight count, and Retry-After then under-promises (only the oldest event ages out); a counter row would make both exact.
     const { count, retryAfterSeconds } = await countIssuedLastHour(tenant.id, application.id);
     if (count >= application.tokenBudgetPerHour) {
@@ -131,7 +153,7 @@ export async function issueToken(
     }
     // Mixed requests go pending as a whole: one token carries one scope string.
     if (policies.some((p) => p.agentPolicy === "approval")) {
-      const approvalId = await createApprovalRequest(
+      return createApprovalRequest(
         tenant,
         application,
         {
@@ -144,7 +166,6 @@ export async function issueToken(
         },
         ctx,
       );
-      return { approvalId };
     }
   }
 
@@ -178,29 +199,59 @@ export async function redeemApproval(
   if (tenant.status === "paused") {
     deny(OAUTH_ERRORS.INVALID_REQUEST, "tenant paused", "tenant_paused");
   }
-  const { claimed, current } = await claimApproval(tenant.id, application.id, approvalId);
-  if (!claimed) {
-    if (!current || (current.status === "approved" && current.consumedAt)) {
-      deny(OAUTH_ERRORS.INVALID_GRANT, "Unknown or already used approval", "invalid_grant");
-    }
-    if (current.status === "denied") {
-      deny(OAUTH_ERRORS.ACCESS_DENIED, "The approval was denied", "approval_denied");
-    }
-    if (current.status === "expired" || current.expiresAt <= new Date()) {
-      deny(OAUTH_ERRORS.EXPIRED_TOKEN, "The approval has expired", "approval_expired");
-    }
-    return { approvalId: current.id };
-  }
+  // Guardrails before the claim, so a refused poll never burns the approval.
+  enforceSourceCidr(tenant, application, ctx.sourceIp);
+  await enforceTokenBudget(tenant, application);
 
-  // A grant revoked or a resource disabled during the window voids the approval.
-  // shortcut: signing failures after the claim burn the approval; avoids a transaction held across key ops.
-  const granted = await getGrantedScopesForAudience(tenant.id, application.id, claimed.audience);
-  if (
-    granted?.resource.status !== "active" ||
-    granted.resource.id !== claimed.resourceId ||
-    claimed.scopes.some((s) => !granted.scopeNames.includes(s))
-  ) {
-    deny(OAUTH_ERRORS.INVALID_GRANT, "Approved scopes are no longer granted", "invalid_grant");
+  const { claimed, current } = await claimApproval(tenant.id, application.id, approvalId);
+  try {
+    if (!claimed) {
+      if (!current || (current.status === "approved" && current.consumedAt)) {
+        deny(OAUTH_ERRORS.INVALID_GRANT, "Unknown or already used approval", "invalid_grant");
+      }
+      if (current.status === "denied") {
+        deny(OAUTH_ERRORS.ACCESS_DENIED, "The approval was denied", "approval_denied");
+      }
+      if (current.status === "expired" || current.expiresAt <= new Date()) {
+        deny(OAUTH_ERRORS.EXPIRED_TOKEN, "The approval has expired", "approval_expired");
+      }
+      return { approvalId: current.id, status: "pending" };
+    }
+
+    // A grant revoked or a resource disabled during the window voids the approval.
+    // shortcut: denials and signing failures after the claim burn the approval; avoids a transaction held across key ops.
+    const granted = await getGrantedScopesForAudience(tenant.id, application.id, claimed.audience);
+    if (
+      granted?.resource.status !== "active" ||
+      granted.resource.id !== claimed.resourceId ||
+      claimed.scopes.some((s) => !granted.scopeNames.includes(s))
+    ) {
+      deny(OAUTH_ERRORS.INVALID_GRANT, "Approved scopes are no longer granted", "invalid_grant");
+    }
+    // A scope demoted to `never` (or deleted) during the window voids the approval.
+    const policies = await db
+      .select({ agentPolicy: scopes.agentPolicy })
+      .from(scopes)
+      .where(
+        and(
+          eq(scopes.tenantId, tenant.id),
+          eq(scopes.resourceId, claimed.resourceId),
+          inArray(scopes.name, claimed.scopes),
+        ),
+      );
+    if (
+      policies.length !== claimed.scopes.length ||
+      policies.some((p) => p.agentPolicy === "never")
+    ) {
+      deny(OAUTH_ERRORS.INVALID_GRANT, "Approved scopes are no longer allowed", "policy_changed");
+    }
+    enforceScopeCeiling(application, claimed.scopes.length);
+  } catch (err) {
+    // Stamp the denial event with what the row asked for; a poll body carries neither.
+    if (err instanceof OAuthError && current) {
+      err.eventTarget = { audience: current.audience, scopes: current.scopes };
+    }
+    throw err;
   }
   return signAndRecord(
     tenant,
@@ -211,6 +262,7 @@ export async function redeemApproval(
       scopes: claimed.scopes,
       ttl: DEFAULTS.APPROVAL_TOKEN_TTL_SECONDS,
       taskId: claimed.taskId ?? undefined,
+      reason: "approval",
     },
     ctx,
   );
@@ -233,6 +285,8 @@ export async function signAndRecord(
     ttl: number;
     taskId?: string;
     delegation?: Delegation;
+    /** Event reason marking how the token was obtained (e.g. `approval`). */
+    reason?: string;
   },
   ctx: { sourceIp: string },
 ): Promise<TokenResponse> {
@@ -264,6 +318,7 @@ export async function signAndRecord(
     resourceId: t.resourceId,
     audience: t.audience,
     outcome: "issued",
+    reason: t.reason ?? null,
     scopes: t.scopes,
     jti,
     expiresAt: new Date(exp * 1000),

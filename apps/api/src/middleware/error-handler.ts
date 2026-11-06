@@ -21,6 +21,8 @@ export class OAuthError extends Error {
   public reason?: string;
   /** Sent as `Retry-After` when set (e.g. an exhausted agent token budget). */
   public retryAfterSeconds?: number;
+  /** Token-event audience/scopes when the request body does not carry them (approval polls). */
+  public eventTarget?: { audience: string; scopes: string[] };
 
   constructor(
     public readonly errorCode: string,
