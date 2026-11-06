@@ -324,9 +324,8 @@ Every authentication failure is `401 invalid_client` with the same message. The 
 
 An application of `kind: "agent"` represents an AI agent or other automated actor. It uses the same token endpoint and any of the three authentication methods (`private_key_jwt` is the better fit). The kind is chosen at creation and cannot be changed; its tokens carry `client_kind: "agent"`.
 
-**Task grouping.** The optional form parameter `task_id` (1 to 128 characters of `A-Za-z0-9._:-`) names the job the agent is working on. It is meant to become the `task_id` claim of the access token and to group the token events, which the admin UI and `GET .../token-events?taskId=` show per task. A value that does not match the format is `400 invalid_request`.
+**Task grouping.** The optional form parameter `task_id` (1 to 128 characters of `A-Za-z0-9._:-`) names the job the agent is working on. It becomes the `task_id` claim of the access token and groups the token events, which the admin UI and `GET .../token-events?taskId=` show per task. A value that does not match the format is `400 invalid_request`.
 
-> Differs from the design note: the token route validates `task_id` but does not pass it on to token issuance, so on this version the claim is not set and events are not grouped by task (the issuance code supports it and is unit-tested directly). Do not rely on it until the route forwards it.
 
 **Guardrails** are fields of the agent application (UI, or `allowedCidrs`, `maxScopesPerToken`, `tokenBudgetPerHour` plus the informational `agentRuntime` and `operatorEmail` in the [management API](api.md#applications)). They are checked on every token request after authentication:
 

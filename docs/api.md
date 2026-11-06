@@ -34,7 +34,7 @@ Token endpoint errors (HTTP status, `error`, cause):
 
 Rate limits (per minute, per IP and per `client_id`): token 6000 / 600, introspect 1200 / 600, revoke 200 / 100; configurable (see README).
 
-Access token: JWT, header `{alg:"ES256", kid, typ:"at+jwt"}`, claims `iss` (`<issuer>`), `sub` and `client_id` (the application's client ID), `aud` (the `resource`), `scope`, `tenant` (slug), `client_kind` (`service` or `agent`), `jti` (UUID), `iat`, `exp`, and `task_id` when one was passed. Note: in this version the token route validates `task_id` but does not forward it to issuance, so over HTTP the claim is not set yet and token events get no `taskId`. TTL is `application.tokenTtlSeconds ?? resource.tokenTtlSeconds ?? tenant.defaultTokenTtlSeconds` (default 3600; 60 to 86400 everywhere).
+Access token: JWT, header `{alg:"ES256", kid, typ:"at+jwt"}`, claims `iss` (`<issuer>`), `sub` and `client_id` (the application's client ID), `aud` (the `resource`), `scope`, `tenant` (slug), `client_kind` (`service` or `agent`), `jti` (UUID), `iat`, `exp`, and `task_id` when one was passed. TTL is `application.tokenTtlSeconds ?? resource.tokenTtlSeconds ?? tenant.defaultTokenTtlSeconds` (default 3600; 60 to 86400 everywhere).
 
 ## Instance endpoints
 
