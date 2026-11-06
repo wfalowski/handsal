@@ -75,11 +75,9 @@ process.on("uncaughtException", (err) => handleFatal(err, "Uncaught exception"))
 process.on("unhandledRejection", (reason) => handleFatal(reason, "Unhandled promise rejection"));
 
 async function main() {
-  // TODO(task-1.2): remove cast once @handsal/db exports these
-  const dbModule = (await import("@handsal/db")) as unknown as {
-    runMigrations(): Promise<void>;
-    pool: { end(): Promise<void> };
-  };
+  // Dynamic import: @handsal/db builds its pool from process.env at import time,
+  // so it must load after ./env.js has run (see index.ts).
+  const dbModule = await import("@handsal/db");
   dbPool = dbModule.pool;
 
   logger.info("Running database migrations...");

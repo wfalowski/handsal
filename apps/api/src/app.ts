@@ -31,10 +31,7 @@ const logger = createLogger("app");
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 
 async function defaultReadinessCheck(): Promise<void> {
-  // TODO(task-1.2): remove cast once @handsal/db exports these
-  const { pool } = (await import("@handsal/db")) as unknown as {
-    pool: { query(sql: string): Promise<unknown> };
-  };
+  const { pool } = await import("@handsal/db");
   await pool.query("select 1");
 }
 

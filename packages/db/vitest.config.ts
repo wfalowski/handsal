@@ -6,5 +6,9 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts"],
     testTimeout: 20000,
+    env: {
+      DATABASE_URL:
+        process.env.DATABASE_URL ?? "postgresql://handsal:handsal_dev@localhost:5434/handsal_test",
+    },
   },
 });

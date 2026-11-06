@@ -1,3 +1,4 @@
+import { OAUTH_ERRORS } from "@handsal/shared";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError, z } from "zod";
@@ -10,15 +11,6 @@ import {
 } from "../utils/security-logger.js";
 
 const logger = createLogger("error-handler");
-
-// TODO(task-1.1): import from @handsal/shared
-const OAUTH_ERRORS = {
-  INVALID_CLIENT: "invalid_client",
-  INVALID_SCOPE: "invalid_scope",
-  UNAUTHORIZED_CLIENT: "unauthorized_client",
-  UNSUPPORTED_GRANT_TYPE: "unsupported_grant_type",
-  SERVER_ERROR: "server_error",
-} as const;
 
 /** RFC 6749 §5.2 error, thrown from OAuth routes (`/t/:slug/...`). */
 export class OAuthError extends Error {
