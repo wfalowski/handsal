@@ -5,7 +5,7 @@ import { useApplicationCreate } from "../lib/queries";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
 import { Input } from "./Input";
-import { SecretReveal } from "./SecretReveal";
+import { SecretDoneFooter, SecretReveal } from "./SecretReveal";
 import { useToast } from "./Toast";
 
 type AuthMethod = ApplicationDto["tokenEndpointAuthMethod"];
@@ -14,16 +14,19 @@ export const SELECT_CLASS =
   "h-11 rounded-[10px] border border-line-strong bg-white pr-3 pl-3 text-ink text-sm focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-accent";
 
 /** "" = inherit the tenant default. */
-export const TTL_OPTIONS = [
+const TTL_OPTIONS = [
   { value: "", label: "Inherit tenant default" },
   { value: "900", label: "15 minutes" },
   { value: "3600", label: "1 hour" },
   { value: "28800", label: "8 hours" },
+  { value: "86400", label: "24 hours" },
 ];
 
-export function ttlToValue(ttl: number | null): string {
-  const v = String(ttl ?? "");
-  return TTL_OPTIONS.some((o) => o.value === v) ? v : "";
+/** TTL_OPTIONS plus `value` when it is not a preset (set via API), so it is shown instead of silently becoming "inherit". */
+export function ttlOptions(value: string) {
+  return TTL_OPTIONS.some((o) => o.value === value)
+    ? TTL_OPTIONS
+    : [...TTL_OPTIONS, { value, label: `${value} s` }];
 }
 
 const METHODS: { value: AuthMethod; label: string; disabled?: boolean }[] = [
@@ -72,7 +75,12 @@ export function ApplicationForm({ tenantId, open, onClose }: Props) {
     onClose();
   };
   return (
-    <Dialog open={open} onClose={close} title={created ? "Application created" : "New application"}>
+    <Dialog
+      open={open}
+      onClose={close}
+      title={created ? "Application created" : "New application"}
+      dismissible={!created}
+    >
       {created ? (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
@@ -82,9 +90,7 @@ export function ApplicationForm({ tenantId, open, onClose }: Props) {
             </code>
           </div>
           <SecretReveal value={created.secret} hint="You won't see this again" />
-          <div className="flex justify-end">
-            <Button onClick={close}>Done</Button>
-          </div>
+          <SecretDoneFooter onDone={close} />
         </div>
       ) : (
         <Form

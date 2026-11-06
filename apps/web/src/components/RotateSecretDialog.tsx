@@ -3,7 +3,7 @@ import { useApplicationRotateSecret } from "../lib/queries";
 import { SELECT_CLASS } from "./ApplicationForm";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
-import { SecretReveal } from "./SecretReveal";
+import { SecretDoneFooter, SecretReveal } from "./SecretReveal";
 import { useToast } from "./Toast";
 
 const GRACE = [
@@ -28,7 +28,7 @@ export function RotateSecretDialog({ tenantId, appId, open, onClose }: Props) {
   }
 
   return (
-    <Dialog open={open} onClose={close} title="Rotate client secret">
+    <Dialog open={open} onClose={close} title="Rotate client secret" dismissible={!result}>
       {result ? (
         <div className="flex flex-col gap-4">
           <SecretReveal
@@ -41,9 +41,7 @@ export function RotateSecretDialog({ tenantId, appId, open, onClose }: Props) {
               Previous secret valid until {new Date(result.until).toLocaleString()}.
             </p>
           )}
-          <div className="flex justify-end">
-            <Button onClick={close}>Done</Button>
-          </div>
+          <SecretDoneFooter onDone={close} />
         </div>
       ) : (
         <div className="flex flex-col gap-4">

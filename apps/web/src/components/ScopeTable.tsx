@@ -8,9 +8,9 @@ import { Table, Td, Th } from "./Table";
 import { useToast } from "./Toast";
 
 type Scope = ResourceDetail["scopes"][number];
-type Props = { tenantId: string; resourceId: string; scopes: Scope[] };
+type Props = { tenantId: string; resourceId: string; scopes: Scope[]; canEdit: boolean };
 
-export function ScopeTable({ tenantId, resourceId, scopes }: Props) {
+export function ScopeTable({ tenantId, resourceId, scopes, canEdit }: Props) {
   const toast = useToast();
   const del = useDeleteScope(tenantId, resourceId);
   const [adding, setAdding] = useState(false);
@@ -21,9 +21,11 @@ export function ScopeTable({ tenantId, resourceId, scopes }: Props) {
     <div className="flex flex-col gap-3 px-5 pt-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-sm">Scopes</h3>
-        <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
-          Add scope
-        </Button>
+        {canEdit && (
+          <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+            Add scope
+          </Button>
+        )}
       </div>
       {scopes.length === 0 ? (
         <EmptyState
@@ -37,9 +39,11 @@ export function ScopeTable({ tenantId, resourceId, scopes }: Props) {
               <Th>Scope</Th>
               <Th>Description</Th>
               <Th className="text-right">Granted to</Th>
-              <Th>
-                <span className="sr-only">Actions</span>
-              </Th>
+              {canEdit && (
+                <Th>
+                  <span className="sr-only">Actions</span>
+                </Th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -54,14 +58,16 @@ export function ScopeTable({ tenantId, resourceId, scopes }: Props) {
                 <Td className="whitespace-nowrap text-right text-muted">
                   {s.grantedAppCount} apps
                 </Td>
-                <Td className="whitespace-nowrap text-right">
-                  <Button variant="ghost" size="sm" onClick={() => setEditing(s)}>
-                    Edit
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setDeleting(s)}>
-                    Delete
-                  </Button>
-                </Td>
+                {canEdit && (
+                  <Td className="whitespace-nowrap text-right">
+                    <Button variant="ghost" size="sm" onClick={() => setEditing(s)}>
+                      Edit
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setDeleting(s)}>
+                      Delete
+                    </Button>
+                  </Td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -7,6 +7,16 @@ type Props = {
   hint?: string;
 };
 
+/** Footer for a dialog showing a once-only secret: the explicit button is the only way out. */
+export function SecretDoneFooter({ onDone }: { onDone: () => void }) {
+  return (
+    <div className="flex items-center justify-end gap-3">
+      <p className="text-muted text-xs">Copy it now — this dialog won't show it again.</p>
+      <Button onClick={onDone}>Done</Button>
+    </div>
+  );
+}
+
 export function SecretReveal({ value, label = "Client secret", hint }: Props) {
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);

@@ -2,12 +2,7 @@ import type { ApplicationDto } from "@handsal/shared";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useState } from "react";
-import {
-  AuthMethodRadio,
-  SELECT_CLASS,
-  TTL_OPTIONS,
-  ttlToValue,
-} from "../components/ApplicationForm";
+import { AuthMethodRadio, SELECT_CLASS, ttlOptions } from "../components/ApplicationForm";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { CurlSnippet } from "../components/CurlSnippet";
@@ -23,10 +18,10 @@ import {
   useApplicationDelete,
   useApplicationDetail,
   useApplicationSetStatus,
-  useApplicationTenantInfo,
   useApplicationUpdate,
   useGrantsResources,
   useMe,
+  useTenant,
 } from "../lib/queries";
 
 export const Route = createFileRoute("/t/$tenantId/applications/$appId")({
@@ -39,7 +34,7 @@ const DOT = { issued: "bg-[#22C55E]", denied: "bg-danger", revoked: "bg-faint" }
 function ApplicationDetailPage() {
   const { tenantId, appId } = Route.useParams();
   const detail = useApplicationDetail(tenantId, appId);
-  const tenantInfo = useApplicationTenantInfo(tenantId);
+  const tenantInfo = useTenant(tenantId);
   const grantsRes = useGrantsResources(tenantId);
   const role = useMe().data?.tenants.find((t) => t.id === tenantId)?.role;
 
@@ -67,10 +62,9 @@ function ApplicationDetailPage() {
 
   const { application: app, grants, tokenEndpoint, issuer, recentTokens } = detail.data;
   const canEdit = role !== "auditor";
-  const scopeNames = grants.flatMap((g) => g.scopes.map((s) => s.name));
 
   return (
-    <div className="flex flex-col gap-6 p-6 md:p-10">
+    <div className="flex flex-col gap-6">
       <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-muted text-[13px]">
         <Link to="/t/$tenantId/applications" params={{ tenantId }}>
           Applications
@@ -102,12 +96,7 @@ function ApplicationDetailPage() {
         </div>
 
         <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-6">
-          <CurlSnippet
-            tokenEndpoint={tokenEndpoint}
-            clientId={app.clientId}
-            scopes={scopeNames}
-            resource={grants[0]?.resource.audience}
-          />
+          <CurlSnippet tokenEndpoint={tokenEndpoint} clientId={app.clientId} grants={grants} />
           <section className={CARD}>
             <h2 className="border-hover border-b p-4 pr-5 pl-5 font-semibold text-[15px]">
               Token profile
@@ -310,8 +299,8 @@ function Credentials({
   const [rotating, setRotating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [method, setMethod] = useState(app.tokenEndpointAuthMethod);
-  const [ttl, setTtl] = useState(ttlToValue(app.tokenTtlSeconds));
-  const savedTtl = ttlToValue(app.tokenTtlSeconds);
+  const savedTtl = String(app.tokenTtlSeconds ?? "");
+  const [ttl, setTtl] = useState(savedTtl);
   const dirty = method !== app.tokenEndpointAuthMethod || ttl !== savedTtl;
   const graceActive =
     app.previousSecretExpiresAt && new Date(app.previousSecretExpiresAt) > new Date();
@@ -377,7 +366,7 @@ function Credentials({
               onChange={(e) => setTtl(e.target.value)}
               className={SELECT_CLASS}
             >
-              {TTL_OPTIONS.map((o) => (
+              {ttlOptions(ttl).map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
                 </option>

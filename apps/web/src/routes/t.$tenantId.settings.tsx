@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { DangerZone } from "../components/DangerZone";
+import { EmptyState } from "../components/EmptyState";
 import { Input } from "../components/Input";
 import { selectClass } from "../components/InviteMemberDialog";
 import { MembersTable } from "../components/MembersTable";
@@ -104,13 +105,25 @@ function SettingsPage() {
     return () => cancelAnimationFrame(raf);
   }, [ready, section]);
 
-  if (!tenant.data) return null;
+  if (tenant.isPending) return <p className="text-muted">Loading…</p>;
+  if (tenant.isError)
+    return (
+      <EmptyState
+        title="Couldn't load settings"
+        description={tenant.error.message}
+        action={
+          <Button variant="secondary" onClick={() => tenant.refetch()}>
+            Retry
+          </Button>
+        }
+      />
+    );
   const t = tenant.data;
   const isOwner = t.role === "owner";
   const canEdit = t.role !== "auditor";
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6 md:p-8">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <header className="flex items-center gap-3">
         <h1 className="font-display font-semibold text-2xl tracking-tight">Settings</h1>
         {t.status === "paused" && <Badge tone="warning">Paused</Badge>}

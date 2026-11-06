@@ -61,7 +61,13 @@ describe("admin-user.service", () => {
     const t2 = await createTenant({ name: "Two" });
     await addMember(t1.id, user.id, "auditor");
     expect(await listTenantsForUser(user.id)).toEqual([
-      { id: t1.id, name: "One", slug: t1.slug, role: "auditor" },
+      {
+        id: t1.id,
+        name: "One",
+        slug: t1.slug,
+        issuer: `https://test.example.com/t/${t1.slug}`,
+        role: "auditor",
+      },
     ]);
     expect(await getTenantRole(user.id, t1.id)).toBe("auditor");
     expect(await getTenantRole(user.id, t2.id)).toBeNull();

@@ -93,14 +93,22 @@ export function useLogout() {
     onSettled: () => {
       clearSession();
       queryClient.clear();
+      // Pending/settled mutations hold the previous user's variables (e.g. one-time secrets).
+      queryClient.getMutationCache().clear();
     },
   });
 }
 
-export function useJwksHealth(slug: string) {
+export function useJwksHealth({ slug, issuer }: { slug: string; issuer: string }) {
+  // Probe the issuer only when it is same-origin: the browser may not reach PUBLIC_URL (internal
+  // hostname, split DNS, CORS), whereas the relative path always hits the API serving this UI.
+  const url =
+    new URL(issuer, window.location.href).origin === window.location.origin
+      ? `${issuer}/.well-known/jwks.json`
+      : `/t/${encodeURIComponent(slug)}/.well-known/jwks.json`;
   return useQuery({
-    queryKey: ["jwks-health", { slug }],
-    queryFn: async () => (await fetch(`/t/${encodeURIComponent(slug)}/.well-known/jwks.json`)).ok,
+    queryKey: ["jwks-health", { url }],
+    queryFn: async () => (await fetch(url)).ok,
     refetchInterval: 60_000,
     retry: false,
   });
@@ -190,14 +198,6 @@ export function useApplicationDetail(tenantId: string, appId: string) {
   return useQuery({
     queryKey: ["application", { tenantId, appId }],
     queryFn: () => api<ApplicationDetail>(`/api/tenants/${tenantId}/applications/${appId}`),
-  });
-}
-
-export function useApplicationTenantInfo(tenantId: string) {
-  return useQuery({
-    queryKey: ["application-tenant", { tenantId }],
-    queryFn: () => api<TenantDto>(`/api/tenants/${tenantId}`),
-    staleTime: 30_000,
   });
 }
 
@@ -297,7 +297,15 @@ export function useApplicationRotateSecret(tenantId: string, appId: string) {
 }
 
 export function useGrantsSave(tenantId: string, appId: string) {
-  const invalidate = useApplicationInvalidate(tenantId);
+  const queryClient = useQueryClient();
+  const invalidateApps = useApplicationInvalidate(tenantId);
+  // Resource pages show granted-app counts, so they go stale too.
+  const invalidate = () =>
+    Promise.all([
+      invalidateApps(),
+      queryClient.invalidateQueries({ queryKey: ["resources", { tenantId }] }),
+      queryClient.invalidateQueries({ queryKey: ["resource", { tenantId }] }),
+    ]);
   return useMutation({
     mutationFn: (scopeIds: string[]) =>
       api<{ grants: GrantView[] }>(`/api/tenants/${tenantId}/applications/${appId}/grants`, {
@@ -338,7 +346,7 @@ export function useResource(tenantId: string, resourceId: string | undefined) {
   });
 }
 
-/** Every resources/scopes mutation invalidates the list and the detail cache. */
+/** Every resources/scopes mutation invalidates the resource caches and the application caches (grants embed resource/scope names). */
 function useResourceMutation<V, R>(tenantId: string, fn: (v: V) => Promise<R>) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -347,6 +355,8 @@ function useResourceMutation<V, R>(tenantId: string, fn: (v: V) => Promise<R>) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["resources", { tenantId }] }),
         queryClient.invalidateQueries({ queryKey: ["resource", { tenantId }] }),
+        queryClient.invalidateQueries({ queryKey: ["application", { tenantId }] }),
+        queryClient.invalidateQueries({ queryKey: ["applications", { tenantId }] }),
       ]);
     },
   });

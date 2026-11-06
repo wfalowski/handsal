@@ -5,7 +5,7 @@ import { useAddMember } from "../lib/queries";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
 import { Input } from "./Input";
-import { SecretReveal } from "./SecretReveal";
+import { SecretDoneFooter, SecretReveal } from "./SecretReveal";
 import { useToast } from "./Toast";
 
 type Props = { open: boolean; onClose: () => void; tenantId: string };
@@ -15,21 +15,44 @@ export const selectClass =
   "h-11 rounded-[10px] border border-line-strong bg-white pr-3 pl-3 text-ink text-sm focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-accent disabled:opacity-60";
 
 export function InviteMemberDialog({ open, onClose, tenantId }: Props) {
+  const [password, setPassword] = useState<string>();
+  const close = () => {
+    setPassword(undefined);
+    onClose();
+  };
   return (
-    <Dialog open={open} onClose={onClose} title="Invite member">
-      <InviteForm tenantId={tenantId} onClose={onClose} />
+    <Dialog open={open} onClose={close} title="Invite member" dismissible={!password}>
+      {password ? (
+        <>
+          <SecretReveal
+            label="Temporary password"
+            value={password}
+            hint="Share it securely; it won't be shown again."
+          />
+          <SecretDoneFooter onDone={close} />
+        </>
+      ) : (
+        <InviteForm tenantId={tenantId} onClose={close} onPassword={setPassword} />
+      )}
     </Dialog>
   );
 }
 
-function InviteForm({ tenantId, onClose }: { tenantId: string; onClose: () => void }) {
+function InviteForm({
+  tenantId,
+  onClose,
+  onPassword,
+}: {
+  tenantId: string;
+  onClose: () => void;
+  onPassword: (password: string) => void;
+}) {
   const toast = useToast();
   const add = useAddMember(tenantId);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<TenantRole>("admin");
   const [emailError, setEmailError] = useState<string>();
-  const [password, setPassword] = useState<string>();
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -37,7 +60,7 @@ function InviteForm({ tenantId, onClose }: { tenantId: string; onClose: () => vo
       { email: email.trim(), name: name.trim() || undefined, role },
       {
         onSuccess: ({ temporaryPassword }) => {
-          if (temporaryPassword) setPassword(temporaryPassword);
+          if (temporaryPassword) onPassword(temporaryPassword);
           else {
             toast.success("Member added");
             onClose();
@@ -49,21 +72,6 @@ function InviteForm({ tenantId, onClose }: { tenantId: string; onClose: () => vo
           else toast.error(err.message);
         },
       },
-    );
-  }
-
-  if (password) {
-    return (
-      <>
-        <SecretReveal
-          label="Temporary password"
-          value={password}
-          hint="Share it securely; it won't be shown again."
-        />
-        <div className="flex justify-end">
-          <Button onClick={onClose}>Done</Button>
-        </div>
-      </>
     );
   }
 

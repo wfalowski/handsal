@@ -69,7 +69,7 @@ function ApplicationsPage() {
     navigate({ to: "/t/$tenantId/applications/$appId", params: { tenantId, appId } });
 
   return (
-    <div className="flex flex-col gap-7 p-6 md:p-10">
+    <div className="flex flex-col gap-7">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="font-display font-semibold text-3xl tracking-tight">Applications</h1>

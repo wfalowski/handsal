@@ -7,7 +7,7 @@ export type MeUser = {
   isSuperAdmin: boolean;
 };
 
-export type MeTenant = { id: string; name: string; slug: string; role: TenantRole };
+export type MeTenant = { id: string; name: string; slug: string; issuer: string; role: TenantRole };
 
 export type MeResponse = { user: MeUser; tenants: MeTenant[]; csrfToken: string | null };
 

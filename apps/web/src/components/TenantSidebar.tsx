@@ -57,7 +57,7 @@ const NAV_CLASS =
   "flex h-11 items-center gap-2.5 rounded-lg pr-2.5 pl-2.5 font-medium text-body hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent md:h-9";
 
 export function TenantSidebar({ tenant, user }: Props) {
-  const jwks = useJwksHealth(tenant.slug);
+  const jwks = useJwksHealth(tenant);
   const logout = useLogout();
   const navigate = useNavigate();
   const tint = tenantTint(tenant.slug);
@@ -129,9 +129,7 @@ export function TenantSidebar({ tenant, user }: Props) {
 
       <div className="flex flex-col gap-2.5 rounded-[10px] bg-surface p-3 md:mt-auto">
         <span className="text-[11px] text-muted uppercase tracking-wide">Issuer</span>
-        <span className="break-all font-mono text-ink text-xs">
-          {window.location.origin}/t/{tenant.slug}
-        </span>
+        <span className="break-all font-mono text-ink text-xs">{tenant.issuer}</span>
         <span
           className={`inline-flex items-center gap-1.5 text-xs ${healthy ? "text-success" : "text-danger"}`}
         >

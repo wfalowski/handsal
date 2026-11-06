@@ -9,7 +9,14 @@ import { ResourceForm } from "./ResourceForm";
 import { ScopeTable } from "./ScopeTable";
 import { useToast } from "./Toast";
 
-type Props = { tenantId: string; resource: Detail; tokens24h?: number; onDeleted: () => void };
+type Props = {
+  tenantId: string;
+  resource: Detail;
+  tokens24h?: number;
+  /** owner/admin; auditors get a read-only view. */
+  canEdit: boolean;
+  onDeleted: () => void;
+};
 
 const TTL_LABELS: Record<number, string> = {
   900: "15 min",
@@ -18,7 +25,7 @@ const TTL_LABELS: Record<number, string> = {
   86400: "24 h",
 };
 
-export function ResourceDetail({ tenantId, resource, tokens24h, onDeleted }: Props) {
+export function ResourceDetail({ tenantId, resource, tokens24h, canEdit, onDeleted }: Props) {
   const toast = useToast();
   const del = useDeleteResource(tenantId);
   const [editing, setEditing] = useState(false);
@@ -49,22 +56,24 @@ export function ResourceDetail({ tenantId, resource, tokens24h, onDeleted }: Pro
             </code>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-            Edit
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="border-red-200 text-danger"
-            onClick={() => {
-              setConfirm("");
-              setDeleting(true);
-            }}
-          >
-            Delete
-          </Button>
-        </div>
+        {canEdit && (
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="border-red-200 text-danger"
+              onClick={() => {
+                setConfirm("");
+                setDeleting(true);
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        )}
       </div>
 
       <dl className="grid grid-cols-3 border-hover border-b">
@@ -79,7 +88,12 @@ export function ResourceDetail({ tenantId, resource, tokens24h, onDeleted }: Pro
         ))}
       </dl>
 
-      <ScopeTable tenantId={tenantId} resourceId={resource.id} scopes={resource.scopes} />
+      <ScopeTable
+        tenantId={tenantId}
+        resourceId={resource.id}
+        scopes={resource.scopes}
+        canEdit={canEdit}
+      />
 
       <div className="flex flex-col gap-2.5 px-5 pt-5">
         <h3 className="font-semibold text-sm">Applications with access</h3>

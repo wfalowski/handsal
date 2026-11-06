@@ -1,4 +1,4 @@
-import { SLUG_REGEX } from "@handsal/shared";
+import { SLUG_REGEX } from "@handsal/shared/constants";
 import { useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { ApiRequestError } from "../lib/api";

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SCOPE_NAME_REGEX } from "../constants/defaults.js";
+import { SCOPE_NAME_REGEX } from "../constants/regex.js";
 
 export const scopeCreateSchema = z.object({
   name: z.string().regex(SCOPE_NAME_REGEX),

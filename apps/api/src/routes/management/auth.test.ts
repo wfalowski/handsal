@@ -88,7 +88,15 @@ describe("session cycle", () => {
     expect(me.status).toBe(200);
     expect(await me.json()).toEqual({
       user: { id: user.id, email: user.email, name: user.name, isSuperAdmin: false },
-      tenants: [{ id: tenant.id, name: "Acme", slug: tenant.slug, role: "admin" }],
+      tenants: [
+        {
+          id: tenant.id,
+          name: "Acme",
+          slug: tenant.slug,
+          issuer: `https://test.example.com/t/${tenant.slug}`,
+          role: "admin",
+        },
+      ],
       csrfToken: csrf,
     });
 
@@ -109,8 +117,20 @@ describe("session cycle", () => {
       await jsonRequest(app, "GET", "/api/auth/me", undefined, { cookie })
     ).json();
     expect(body.tenants).toEqual([
-      { id: a.id, name: "A", slug: a.slug, role: "owner" },
-      { id: b.id, name: "B", slug: b.slug, role: "owner" },
+      {
+        id: a.id,
+        name: "A",
+        slug: a.slug,
+        issuer: `https://test.example.com/t/${a.slug}`,
+        role: "owner",
+      },
+      {
+        id: b.id,
+        name: "B",
+        slug: b.slug,
+        issuer: `https://test.example.com/t/${b.slug}`,
+        role: "owner",
+      },
     ]);
   });
 

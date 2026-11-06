@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { DEFAULTS, SLUG_REGEX } from "../constants/defaults.js";
+import { DEFAULTS } from "../constants/defaults.js";
+import { SLUG_REGEX } from "../constants/regex.js";
 
 export const tenantCreateSchema = z.object({
   name: z.string().min(1).max(255),

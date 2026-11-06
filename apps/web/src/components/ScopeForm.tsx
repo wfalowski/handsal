@@ -1,4 +1,4 @@
-import { SCOPE_NAME_REGEX } from "@handsal/shared";
+import { SCOPE_NAME_REGEX } from "@handsal/shared/constants";
 import { type FormEvent, useState } from "react";
 import { ApiRequestError } from "../lib/api";
 import { useCreateScope, useUpdateScope } from "../lib/queries";

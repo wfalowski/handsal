@@ -31,7 +31,7 @@ RUN pnpm --filter @handsal/api run build
 RUN cp -r apps/web/dist apps/api/public
 
 # Patch workspace package exports to point to compiled JS (not .ts)
-RUN sed -i 's|"./src/index.ts"|"./dist/index.js"|g' packages/shared/package.json
+RUN sed -i -e 's|"./src/index.ts"|"./dist/index.js"|g' -e 's|"./src/constants/index.ts"|"./dist/constants/index.js"|g' packages/shared/package.json
 RUN sed -i 's|"./src/index.ts"|"./dist/index.js"|g' packages/db/package.json
 
 # ── Stage 4: Production ─────────────────────────────────────

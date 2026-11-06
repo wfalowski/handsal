@@ -3,6 +3,7 @@ import type { TenantRole } from "@handsal/shared";
 import { and, asc, eq } from "drizzle-orm";
 import { ApiError } from "../middleware/error-handler.js";
 import { hashSecret, verifySecret } from "../utils/crypto.js";
+import { issuerFor } from "./tenant.service.js";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type AdminUser = typeof adminUsers.$inferSelect;
@@ -18,6 +19,7 @@ export interface UserTenant {
   id: string;
   name: string;
   slug: string;
+  issuer: string;
   role: TenantRole;
 }
 
@@ -86,12 +88,13 @@ export async function touchLastLogin(id: string): Promise<void> {
 
 /** Tenants the user is a member of, with their role. */
 export async function listTenantsForUser(userId: string): Promise<UserTenant[]> {
-  return db
+  const rows = await db
     .select({ id: tenants.id, name: tenants.name, slug: tenants.slug, role: tenantMembers.role })
     .from(tenantMembers)
     .innerJoin(tenants, eq(tenants.id, tenantMembers.tenantId))
     .where(eq(tenantMembers.adminUserId, userId))
     .orderBy(asc(tenants.name));
+  return rows.map((t) => ({ ...t, issuer: issuerFor(t.slug) }));
 }
 
 /** Every tenant as `owner` (super-admin / API key view). */
@@ -100,7 +103,7 @@ export async function listAllTenantsAsOwner(): Promise<UserTenant[]> {
     .select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
     .from(tenants)
     .orderBy(asc(tenants.name));
-  return rows.map((t) => ({ ...t, role: "owner" as const }));
+  return rows.map((t) => ({ ...t, issuer: issuerFor(t.slug), role: "owner" as const }));
 }
 
 export async function getTenantRole(userId: string, tenantId: string): Promise<TenantRole | null> {
