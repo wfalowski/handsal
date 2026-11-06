@@ -7,6 +7,7 @@ import { AuthMethodRadio, SELECT_CLASS, ttlOptions } from "../components/Applica
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { CurlSnippet } from "../components/CurlSnippet";
+import { DelegationSettings } from "../components/DelegationSettings";
 import { Dialog } from "../components/Dialog";
 import { EmptyState } from "../components/EmptyState";
 import { GrantsMatrix } from "../components/GrantsMatrix";
@@ -106,6 +107,16 @@ function ApplicationDetailPage() {
               tenantId={tenantId}
               app={app}
               budgetUsed={agentBudgetUsed}
+              canEdit={canEdit}
+            />
+          )}
+          {isAgent && (
+            <DelegationSettings
+              key={[app.mayActFor?.join(), app.delegationScopeMode].join("|")}
+              tenantId={tenantId}
+              app={app}
+              issuer={issuer}
+              grants={grants}
               canEdit={canEdit}
             />
           )}

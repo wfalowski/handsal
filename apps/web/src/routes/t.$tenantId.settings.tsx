@@ -4,6 +4,7 @@ import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { DangerZone } from "../components/DangerZone";
 import { EmptyState } from "../components/EmptyState";
+import { ExternalIdpForm } from "../components/ExternalIdpForm";
 import { Input } from "../components/Input";
 import { selectClass } from "../components/InviteMemberDialog";
 import { MembersTable } from "../components/MembersTable";
@@ -147,6 +148,9 @@ function SettingsPage() {
           </Section>
           <Section id="token-defaults" title="Token defaults">
             <TokenDefaultsForm tenant={t} canEdit={canEdit} />
+          </Section>
+          <Section id="external-idp" title="External identity provider">
+            <ExternalIdpForm key={JSON.stringify(t.externalIdp)} tenant={t} canEdit={canEdit} />
           </Section>
           <Section id="members" title="Members">
             <MembersTable tenantId={tenantId} canEdit={isOwner} />

@@ -385,6 +385,7 @@ export type TenantPatch = {
   defaultTokenTtlSeconds?: number;
   introspectionEnabled?: boolean;
   keyRotationDays?: number | null;
+  externalIdp?: TenantDto["externalIdp"];
 };
 
 export function useTenant(tenantId: string) {
@@ -527,6 +528,8 @@ export type AgentFields = {
   allowedCidrs?: string[];
   maxScopesPerToken?: number | null;
   tokenBudgetPerHour?: number | null;
+  mayActFor?: ApplicationDto["mayActFor"];
+  delegationScopeMode?: ApplicationDto["delegationScopeMode"];
 };
 export type ApplicationWriteInput = AgentFields & {
   tokenEndpointAuthMethod?: ApplicationDto["tokenEndpointAuthMethod"];
