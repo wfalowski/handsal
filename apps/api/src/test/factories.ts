@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { applicationGrants, db, resources, scopes, tenantMembers, tenants } from "@handsal/db";
+import {
+  applicationGrants,
+  applications,
+  db,
+  resources,
+  scopes,
+  tenantMembers,
+  tenants,
+} from "@handsal/db";
 import type { TenantRole } from "@handsal/shared";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   exportSPKI,
   generateKeyPair,
@@ -51,7 +59,24 @@ export async function createApplication(
   tenantId: string,
   over: Partial<ApplicationCreateInput> = {},
 ) {
-  return createApplicationService(tenantId, { name: `app-${uniq()}`, ...over });
+  const { tokenEndpointAuthMethod, ...rest } = over;
+  const created = await createApplicationService(tenantId, {
+    name: `app-${uniq()}`,
+    ...rest,
+    // The service refuses private_key_jwt until a key is registered; tests register keys afterwards.
+    ...(tokenEndpointAuthMethod && tokenEndpointAuthMethod !== "private_key_jwt"
+      ? { tokenEndpointAuthMethod }
+      : {}),
+  });
+  if (tokenEndpointAuthMethod !== "private_key_jwt") return created;
+  await db
+    .update(applications)
+    .set({ tokenEndpointAuthMethod })
+    .where(eq(applications.id, created.application.id));
+  return {
+    ...created,
+    application: { ...created.application, tokenEndpointAuthMethod },
+  };
 }
 
 export async function createResourceWithScopes(

@@ -12,6 +12,7 @@ import {
 } from "../test/factories.js";
 import { verifySecret } from "../utils/crypto.js";
 import {
+  createApplication as createApplicationService,
   deleteApplication,
   getApplication,
   listApplications,
@@ -245,7 +246,10 @@ describe("agent applications", () => {
   it("private_key_jwt requires an active registered key → 409 no_application_key", async () => {
     const tenant = await createTenant();
     const onCreate = await apiErrorOf(
-      createApplication(tenant.id, { tokenEndpointAuthMethod: "private_key_jwt" }),
+      createApplicationService(tenant.id, {
+        name: "jwt-app",
+        tokenEndpointAuthMethod: "private_key_jwt",
+      }),
     );
     expect([onCreate.statusCode, onCreate.errorCode]).toEqual([409, "no_application_key"]);
 
