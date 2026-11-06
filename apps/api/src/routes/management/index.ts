@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { except } from "hono/combine";
 import { type AdminEnv, adminAuth, csrfProtection } from "../../middleware/admin-auth.js";
+import { applicationRoutes } from "./applications.js";
 import { authRoutes } from "./auth.js";
 import { signingKeyRoutes } from "./signing-keys.js";
 import { tokenEventRoutes } from "./token-events.js";
@@ -17,3 +18,4 @@ managementRoutes.use(
 managementRoutes.route("/auth", authRoutes);
 managementRoutes.route("/tenants", signingKeyRoutes);
 managementRoutes.route("/tenants", tokenEventRoutes);
+managementRoutes.route("/tenants", applicationRoutes);
