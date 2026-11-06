@@ -1,9 +1,11 @@
+import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./globals.css";
+import { router } from "./router";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <h1>Handsal</h1>
+    <RouterProvider router={router} />
   </StrictMode>,
 );
