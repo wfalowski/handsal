@@ -59,7 +59,10 @@ export function AuthMethodRadio({
   return (
     <fieldset className="flex flex-col gap-1.5">
       <legend className="mb-1.5 font-medium text-[13px] text-body">Authentication method</legend>
-      {METHODS.map((m) => {
+      {METHODS.filter(
+        // private_key_jwt is an agent feature; keep it visible for a service app the API already put on it.
+        (m) => m.value !== "private_key_jwt" || agent || value === "private_key_jwt",
+      ).map((m) => {
         const off = disabled || (m.value === "private_key_jwt" && !allowPrivateKey);
         return (
           <label
