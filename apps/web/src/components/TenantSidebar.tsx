@@ -62,6 +62,7 @@ export function TenantSidebar({ tenant, user }: Props) {
   const navigate = useNavigate();
   const tint = tenantTint(tenant.slug);
   const healthy = jwks.data === true;
+  const checking = jwks.data === undefined;
   // Super-admins see every tenant as "owner" (see /api/auth/me).
   const role = user.isSuperAdmin ? "Owner" : tenant.role[0]?.toUpperCase() + tenant.role.slice(1);
 
@@ -131,13 +132,13 @@ export function TenantSidebar({ tenant, user }: Props) {
         <span className="text-[11px] text-muted uppercase tracking-wide">Issuer</span>
         <span className="break-all font-mono text-ink text-xs">{tenant.issuer}</span>
         <span
-          className={`inline-flex items-center gap-1.5 text-xs ${healthy ? "text-success" : "text-danger"}`}
+          className={`inline-flex items-center gap-1.5 text-xs ${healthy ? "text-success" : checking ? "text-muted" : "text-danger"}`}
         >
           <span
             aria-hidden="true"
-            className={`inline-block h-[7px] w-[7px] rounded-full ${healthy ? "bg-green-500" : "bg-red-500"}`}
+            className={`inline-block h-[7px] w-[7px] rounded-full ${healthy ? "bg-green-500" : checking ? "bg-line" : "bg-red-500"}`}
           />
-          {healthy ? "JWKS healthy" : "JWKS unreachable"}
+          {healthy ? "JWKS healthy" : checking ? "Checking JWKS…" : "JWKS unreachable"}
         </span>
       </div>
 
