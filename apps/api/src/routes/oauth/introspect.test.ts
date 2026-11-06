@@ -5,8 +5,8 @@ import { decodeJwt } from "jose";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../app.js";
 import { revokeAllApplicationTokens } from "../../services/application.service.js";
-import { revokeAllTenantTokens } from "../../services/revocation.service.js";
 import { rotateKey } from "../../services/signing-key.service.js";
+import { revokeAllTenantTokens } from "../../services/tenant.service.js";
 import {
   createApplication,
   createResourceWithScopes,

@@ -4,10 +4,8 @@ import type { AdminEnv } from "../../middleware/admin-auth.js";
 import { requireTenantAccess } from "../../middleware/tenant-access.js";
 import { createScope, deleteScope, listScopes, updateScope } from "../../services/scope.service.js";
 
-// `agentPolicy` is accepted (defaults to `auto`) but is not in the shared input schemas yet.
-const agentPolicy = scopeDtoSchema.shape.agentPolicy.optional();
-const createSchema = scopeCreateSchema.extend({ agentPolicy });
-const updateSchema = scopeUpdateSchema.extend({ agentPolicy });
+const createSchema = scopeCreateSchema;
+const updateSchema = scopeUpdateSchema;
 
 // Mounted at /:tenantId/resources/:resourceId/scopes inside ./resources.ts.
 export const scopeRoutes = new Hono<AdminEnv>();

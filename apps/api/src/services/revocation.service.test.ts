@@ -2,8 +2,8 @@
 import { db, revokedTokens, runMigrations } from "@handsal/db";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTenant, truncateAll } from "../test/factories.js";
-import { purgeExpiredRevocations, revokeAllTenantTokens } from "./revocation.service.js";
-import { getTenantById } from "./tenant.service.js";
+import { purgeExpiredRevocations } from "./revocation.service.js";
+import { getTenantById, revokeAllTenantTokens } from "./tenant.service.js";
 
 beforeAll(async () => {
   await runMigrations();

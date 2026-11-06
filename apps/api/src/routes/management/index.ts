@@ -3,11 +3,11 @@ import { except } from "hono/combine";
 import { type AdminEnv, adminAuth, csrfProtection } from "../../middleware/admin-auth.js";
 import { applicationRoutes } from "./applications.js";
 import { authRoutes } from "./auth.js";
-import { signingKeyRoutes } from "./signing-keys.js";
-import { tokenEventRoutes } from "./token-events.js";
-import { resourceRoutes } from "./resources.js";
 import { memberRoutes } from "./members.js";
+import { resourceRoutes } from "./resources.js";
+import { signingKeyRoutes } from "./signing-keys.js";
 import { tenantRoutes } from "./tenants.js";
+import { tokenEventRoutes } from "./token-events.js";
 
 // Mounted at /api. Everything except login/logout requires an actor (session or API key)
 // and, for session actors, X-CSRF-Token on mutating methods.

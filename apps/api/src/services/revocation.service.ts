@@ -50,11 +50,6 @@ export async function revokeToken(
   });
 }
 
-/** Tokens of this tenant with `iat < tokens_not_before` become inactive (enforced by introspection). */
-export async function revokeAllTenantTokens(tenantId: string): Promise<void> {
-  await db.update(tenants).set({ tokensNotBefore: new Date() }).where(eq(tenants.id, tenantId));
-}
-
 /** Delete revocations whose token has expired anyway (all tenants). Returns the deleted count. */
 export async function purgeExpiredRevocations(): Promise<number> {
   const result = await db.delete(revokedTokens).where(lt(revokedTokens.expiresAt, sql`now()`));

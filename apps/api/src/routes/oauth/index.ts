@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import type { AppEnv } from "../../app.js";
 import { tenantResolver } from "../../middleware/tenant-resolver.js";
 import { createDiscoveryRoutes } from "./discovery.js";
-import { createJwksRoutes } from "./jwks.js";
 import { createIntrospectRoutes } from "./introspect.js";
+import { createJwksRoutes } from "./jwks.js";
 import { createRevokeRoutes } from "./revoke.js";
 import { createTokenRoutes } from "./token.js";
 
