@@ -9,7 +9,7 @@ export type MeUser = {
 
 export type MeTenant = { id: string; name: string; slug: string; role: TenantRole };
 
-export type MeResponse = { user: MeUser; tenants: MeTenant[] };
+export type MeResponse = { user: MeUser; tenants: MeTenant[]; csrfToken: string | null };
 
 export type TenantListItem = TenantDto & {
   appCount: number;

@@ -12,7 +12,11 @@ import type { MeResponse, MeUser, TenantListItem } from "./types";
 
 export const meQueryOptions = queryOptions({
   queryKey: ["me"],
-  queryFn: () => api<MeResponse>("/api/auth/me"),
+  queryFn: async () => {
+    const me = await api<MeResponse>("/api/auth/me");
+    if (me.csrfToken) setSession({ user: me.user, csrfToken: me.csrfToken });
+    return me;
+  },
   staleTime: 5 * 60_000,
   retry: false,
 });

@@ -82,13 +82,14 @@ describe("session cycle", () => {
     const { user, password } = await createAdminUser();
     const tenant = await createTenant({ name: "Acme" });
     await addMember(tenant.id, user.id, "admin");
-    const { cookie } = await loginAs(app, user.email, password);
+    const { cookie, csrf } = await loginAs(app, user.email, password);
 
     const me = await jsonRequest(app, "GET", "/api/auth/me", undefined, { cookie });
     expect(me.status).toBe(200);
     expect(await me.json()).toEqual({
       user: { id: user.id, email: user.email, name: user.name, isSuperAdmin: false },
       tenants: [{ id: tenant.id, name: "Acme", slug: tenant.slug, role: "admin" }],
+      csrfToken: csrf,
     });
 
     const out = await jsonRequest(app, "POST", "/api/auth/logout", undefined, { cookie });

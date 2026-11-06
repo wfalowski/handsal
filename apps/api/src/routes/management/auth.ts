@@ -85,5 +85,8 @@ authRoutes.get("/me", async (c) => {
     actor.kind === "user"
       ? { id: actor.userId, email: actor.email, name: actor.name, isSuperAdmin: actor.isSuperAdmin }
       : { id: null, email: null, name: "API key", isSuperAdmin: true };
-  return c.json({ user, tenants });
+  // The SPA loses its in-memory CSRF token on reload; re-derive it from the session cookie.
+  const session = getCookie(c, SESSION_COOKIE);
+  const csrfToken = session ? csrfTokenFor(session) : null;
+  return c.json({ user, tenants, csrfToken });
 });
