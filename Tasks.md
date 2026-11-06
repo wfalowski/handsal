@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:subagent-driven-development` (one fresh `developer` agent per task, `code-reviewer` after each behaviour-changing task, `verifier` on the combined result). Each task below is a self-contained brief: copy it verbatim into the agent prompt together with the **Global Constraints** and **Conventions** sections. Steps use `- [ ]` for tracking.
 
+**Status (2026-11-06):** Phases 0–5 (all 23 MVP tasks) implemented and merged to `main`; Phase 1–4 code reviews applied. Remaining work is Phase 6 (agents) and the backlog below.
+
 **Goal:** An open-source, self-hostable, multi-tenant machine-to-machine OAuth 2.0 authorization server (client-credentials grant, ES256 JWTs, introspection, revocation, JWKS, per-tenant issuers) with an admin UI, shipped as **one Docker image** plus a production `docker-compose` with PostgreSQL.
 
 **Architecture:** pnpm + Turborepo monorepo. `apps/api` is a Hono (Node 24) server that exposes the OAuth endpoints under `/t/:slug/…`, a session/API-key protected management REST API under `/api/…`, and serves the built React SPA from `/`. `packages/db` is Drizzle ORM + PostgreSQL 16 with migrations run at startup. `packages/shared` holds Zod schemas, constants and types shared by api and web. `apps/web` is React 19 + TanStack Router/Query + Tailwind. Everything is scoped by `tenant_id`; each tenant has its own signing keys and issuer URL.
@@ -374,7 +376,7 @@ Each task gets its own migration (`00NN_*.sql`) and a short design note in `docs
 ### Non-agent backlog (unscheduled)
 
 Opaque tokens (introspection-only format) · custom issuer domains per tenant · admin SSO (OIDC) · password reset · Redis store for rate limits (multi-replica) · CSV export of token events · "Introspect a token" admin tool · p95 latency tile · audit log of admin actions · enterprise license + feature flags.
-`CREATE INDEX CONCURRENTLY` migrations once tables grow · `unsupported_token_type` for unknown `token_type_hint` on revoke
+admin password reset / "reset temporary password" route (re-inviting an existing user returns no password) · `CREATE INDEX CONCURRENTLY` migrations once tables grow · `unsupported_token_type` for unknown `token_type_hint` on revoke
 
 ---
 
