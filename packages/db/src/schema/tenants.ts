@@ -1,4 +1,13 @@
-import { boolean, integer, pgEnum, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  timestamp,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
 
 export const tenantStatus = pgEnum("tenant_status", ["active", "paused"]);
 
@@ -12,6 +21,9 @@ export const tenants = pgTable("tenants", {
   // null = manual rotation only
   keyRotationDays: integer("key_rotation_days"),
   tokensNotBefore: timestamp("tokens_not_before", { withTimezone: true }),
+  // Trusted external IdP for token-exchange subject tokens; null = none.
+  // shortcut: one external issuer per tenant; promote to a trusted_issuers table when a tenant needs two
+  externalIdp: jsonb("external_idp").$type<{ issuer: string; jwksUri: string; audience: string }>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

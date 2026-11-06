@@ -18,6 +18,10 @@ const operatorEmail = z.email().max(255);
 const allowedCidrs = z.array(z.string().max(49).regex(CIDR_REGEX)).max(AGENT_CIDRS_MAX);
 const maxScopesPerToken = z.number().int().min(AGENT_MAX_SCOPES_MIN).max(AGENT_MAX_SCOPES_MAX);
 const tokenBudgetPerHour = z.number().int().min(AGENT_BUDGET_MIN).max(AGENT_BUDGET_MAX);
+// Token exchange (RFC 8693) delegation settings, agent-only like the guardrails above.
+const mayActForEnum = z.enum(["users", "tenant", "services"]);
+const mayActFor = z.array(mayActForEnum).max(3);
+const delegationScopeMode = z.enum(["intersection", "agent_only"]);
 
 export const applicationCreateSchema = z.object({
   name: z.string().min(1).max(255),
@@ -31,6 +35,8 @@ export const applicationCreateSchema = z.object({
   allowedCidrs: allowedCidrs.optional(),
   maxScopesPerToken: maxScopesPerToken.optional(),
   tokenBudgetPerHour: tokenBudgetPerHour.optional(),
+  mayActFor: mayActFor.optional(),
+  delegationScopeMode: delegationScopeMode.optional(),
 });
 
 // `kind` is immutable after create.
@@ -44,6 +50,9 @@ export const applicationUpdateSchema = z.object({
   allowedCidrs: allowedCidrs.nullable().optional(),
   maxScopesPerToken: maxScopesPerToken.nullable().optional(),
   tokenBudgetPerHour: tokenBudgetPerHour.nullable().optional(),
+  // Columns are NOT NULL with defaults: reset with [] / "intersection", not null.
+  mayActFor: mayActFor.optional(),
+  delegationScopeMode: delegationScopeMode.optional(),
 });
 
 export const rotateSecretSchema = z.object({
@@ -74,4 +83,8 @@ export const applicationDtoSchema = z.object({
   allowedCidrs: z.array(z.string()),
   maxScopesPerToken: z.number().int().nullable(),
   tokenBudgetPerHour: z.number().int().nullable(),
+  // shortcut: optional until the 6.4 management slice emits them; make required then.
+  mayActFor: z.array(mayActForEnum).optional(),
+  // shortcut: optional until the 6.4 management slice emits them; make required then.
+  delegationScopeMode: delegationScopeMode.optional(),
 });

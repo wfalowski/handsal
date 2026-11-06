@@ -20,6 +20,7 @@ export const tokenEndpointAuthMethod = pgEnum("token_endpoint_auth_method", [
   "private_key_jwt",
 ]);
 export const applicationStatus = pgEnum("application_status", ["active", "disabled"]);
+export const delegationScopeMode = pgEnum("delegation_scope_mode", ["intersection", "agent_only"]);
 
 export const applications = pgTable(
   "applications",
@@ -55,6 +56,11 @@ export const applications = pgTable(
     allowedCidrs: text("allowed_cidrs").array().notNull().default(sql`'{}'::text[]`),
     maxScopesPerToken: integer("max_scopes_per_token"),
     tokenBudgetPerHour: integer("token_budget_per_hour"),
+    // Token exchange (RFC 8693), agent-only. Members users|tenant|services, validated by Zod.
+    mayActFor: text("may_act_for").array().notNull().default(sql`'{}'::text[]`),
+    delegationScopeMode: delegationScopeMode("delegation_scope_mode")
+      .notNull()
+      .default("intersection"),
   },
   (t) => [
     index("idx_applications_tenant_id").on(t.tenantId),

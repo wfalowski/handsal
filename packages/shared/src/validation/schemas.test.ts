@@ -4,9 +4,11 @@ import {
   CLIENT_ID_REGEX,
   DEFAULTS,
   GRANT_TYPES,
+  TOKEN_TYPE_URNS,
 } from "../constants/index.js";
 import {
   applicationCreateSchema,
+  applicationDtoSchema,
   applicationKeyCreateSchema,
   applicationKeyRetireSchema,
   applicationUpdateSchema,
@@ -14,6 +16,7 @@ import {
   approvalDtoSchema,
   approvalGrantSchema,
   approvalsQuerySchema,
+  externalIdpSchema,
   grantsReplaceSchema,
   introspectRequestSchema,
   loginSchema,
@@ -24,8 +27,10 @@ import {
   scopeCreateSchema,
   tasksQuerySchema,
   tenantCreateSchema,
+  tenantDtoSchema,
   tenantUpdateSchema,
   tokenEventsQuerySchema,
+  tokenExchangeSchema,
   tokenRequestSchema,
   tokenStatsDtoSchema,
 } from "./index.js";
@@ -49,6 +54,19 @@ describe("tenant", () => {
     );
     expect(ok(tenantUpdateSchema, { defaultTokenTtlSeconds: 59 })).toBe(false);
     expect(ok(tenantUpdateSchema, { defaultTokenTtlSeconds: 86401 })).toBe(false);
+  });
+  it("externalIdp: https jwksUri, nullable on update", () => {
+    const idp = {
+      issuer: "https://idp.example.com/",
+      jwksUri: "https://idp.example.com/.well-known/jwks.json",
+      audience: "handsal",
+    };
+    expect(ok(tenantUpdateSchema, { externalIdp: idp })).toBe(true);
+    expect(ok(tenantUpdateSchema, { externalIdp: null })).toBe(true);
+    expect(ok(externalIdpSchema, { ...idp, jwksUri: "http://idp.example.com/jwks" })).toBe(false);
+    expect(ok(externalIdpSchema, { ...idp, issuer: "not a url" })).toBe(false);
+    expect(ok(externalIdpSchema, { ...idp, audience: "" })).toBe(false);
+    expect(ok(tenantDtoSchema.shape.externalIdp, idp)).toBe(true);
   });
 });
 
@@ -110,6 +128,22 @@ describe("application", () => {
       true,
     );
     expect(ok(applicationUpdateSchema.strict(), { kind: "agent" })).toBe(false);
+  });
+  it("delegation settings: mayActFor enum array, scope mode enum", () => {
+    expect(
+      ok(applicationUpdateSchema, {
+        mayActFor: ["users", "tenant", "services"],
+        delegationScopeMode: "agent_only",
+      }),
+    ).toBe(true);
+    expect(ok(applicationCreateSchema, { name: "a", kind: "agent", mayActFor: [] })).toBe(true);
+    expect(ok(applicationUpdateSchema, { mayActFor: ["admins"] })).toBe(false);
+    expect(ok(applicationUpdateSchema, { mayActFor: ["users", "users", "users", "users"] })).toBe(
+      false,
+    );
+    expect(ok(applicationUpdateSchema, { mayActFor: null })).toBe(false);
+    expect(ok(applicationUpdateSchema, { delegationScopeMode: "union" })).toBe(false);
+    expect(ok(applicationDtoSchema.shape.delegationScopeMode, "intersection")).toBe(true);
   });
   it("rejects unknown auth method", () => {
     expect(ok(applicationCreateSchema, { name: "a", tokenEndpointAuthMethod: "none" })).toBe(false);
@@ -198,6 +232,34 @@ describe("oauth requests", () => {
     expect(ok(tokenRequestSchema, { ...base, task_id: "has space" })).toBe(false);
     expect(ok(tokenRequestSchema, { ...base, task_id: "" })).toBe(false);
     expect(ok(tokenRequestSchema, { ...base, task_id: "a".repeat(129) })).toBe(false);
+  });
+  it("token exchange request", () => {
+    const base = {
+      subject_token: "a.b.c",
+      subject_token_type: TOKEN_TYPE_URNS.ACCESS_TOKEN,
+      resource: "https://api",
+    };
+    expect(GRANT_TYPES.TOKEN_EXCHANGE).toBe("urn:ietf:params:oauth:grant-type:token-exchange");
+    expect(ok(tokenExchangeSchema, base)).toBe(true);
+    expect(
+      ok(tokenExchangeSchema, {
+        ...base,
+        subject_token_type: TOKEN_TYPE_URNS.JWT,
+        scope: "a b",
+        task_id: "t-1",
+      }),
+    ).toBe(true);
+    expect(ok(tokenExchangeSchema, { ...base, subject_token: "" })).toBe(false);
+    expect(ok(tokenExchangeSchema, { ...base, subject_token: "x".repeat(8193) })).toBe(false);
+    expect(
+      ok(tokenExchangeSchema, {
+        ...base,
+        subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
+      }),
+    ).toBe(false);
+    expect(ok(tokenExchangeSchema, { ...base, resource: undefined })).toBe(false);
+    expect(ok(tokenExchangeSchema, { ...base, actor_token: "x" })).toBe(false);
+    expect(ok(tokenExchangeSchema, { ...base, actor_token_type: TOKEN_TYPE_URNS.JWT })).toBe(false);
   });
   it("introspect requires token", () => {
     expect(ok(introspectRequestSchema, { token: "t", token_type_hint: "access_token" })).toBe(true);

@@ -1,8 +1,17 @@
 export const GRANT_TYPES = {
   CLIENT_CREDENTIALS: "client_credentials",
   APPROVAL: "urn:handsal:params:grant-type:approval",
+  TOKEN_EXCHANGE: "urn:ietf:params:oauth:grant-type:token-exchange",
 } as const;
 export const TOKEN_TYPES = { BEARER: "Bearer" } as const;
+// RFC 8693 token type identifiers (subject_token_type, issued_token_type).
+export const TOKEN_TYPE_URNS = {
+  ACCESS_TOKEN: "urn:ietf:params:oauth:token-type:access_token",
+  JWT: "urn:ietf:params:oauth:token-type:jwt",
+} as const;
+export type TokenTypeUrn = (typeof TOKEN_TYPE_URNS)[keyof typeof TOKEN_TYPE_URNS];
+// Exchanged tokens are always Handsal access tokens.
+export const ISSUED_TOKEN_TYPE = TOKEN_TYPE_URNS.ACCESS_TOKEN;
 export const OAUTH_ERRORS = {
   INVALID_REQUEST: "invalid_request",
   INVALID_CLIENT: "invalid_client",
@@ -63,3 +72,13 @@ export const APPROVAL_STATUSES = {
   EXPIRED: "expired",
 } as const;
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[keyof typeof APPROVAL_STATUSES];
+
+export const MAY_ACT_FOR = { USERS: "users", TENANT: "tenant", SERVICES: "services" } as const;
+export type MayActFor = (typeof MAY_ACT_FOR)[keyof typeof MAY_ACT_FOR];
+
+export const DELEGATION_SCOPE_MODES = {
+  INTERSECTION: "intersection",
+  AGENT_ONLY: "agent_only",
+} as const;
+export type DelegationScopeMode =
+  (typeof DELEGATION_SCOPE_MODES)[keyof typeof DELEGATION_SCOPE_MODES];

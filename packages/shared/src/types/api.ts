@@ -5,7 +5,7 @@ import type { approvalCountsDtoSchema, approvalDtoSchema } from "../validation/a
 import type { memberDtoSchema, signingKeyDtoSchema } from "../validation/member.schema.js";
 import type { resourceDtoSchema } from "../validation/resource.schema.js";
 import type { scopeDtoSchema } from "../validation/scope.schema.js";
-import type { tenantDtoSchema } from "../validation/tenant.schema.js";
+import type { externalIdpSchema, tenantDtoSchema } from "../validation/tenant.schema.js";
 import type {
   taskSummaryDtoSchema,
   tokenEventDtoSchema,
@@ -19,6 +19,7 @@ export interface ApiErrorBody {
 }
 
 export type TenantDto = z.infer<typeof tenantDtoSchema>;
+export type ExternalIdp = z.infer<typeof externalIdpSchema>;
 export type ApplicationDto = z.infer<typeof applicationDtoSchema>;
 export type ResourceDto = z.infer<typeof resourceDtoSchema>;
 export type ScopeDto = z.infer<typeof scopeDtoSchema>;

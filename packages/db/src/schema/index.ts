@@ -5,6 +5,7 @@ export {
   applicationKind,
   applicationStatus,
   applications,
+  delegationScopeMode,
   tokenEndpointAuthMethod,
 } from "./applications.js";
 export { approvalRequests, approvalStatus } from "./approval-requests.js";

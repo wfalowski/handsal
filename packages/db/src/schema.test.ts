@@ -246,6 +246,26 @@ describe("schema constraints", () => {
     expect(await db.select().from(approvalRequests)).toHaveLength(0);
   });
 
+  it("defaults token-exchange delegation settings and stores external_idp", async () => {
+    const idp = {
+      issuer: "https://idp.example",
+      jwksUri: "https://idp.example/jwks",
+      audience: "a",
+    };
+    const [tenant] = await db
+      .insert(tenants)
+      .values({ name: "t", slug: "tenant-a", externalIdp: idp })
+      .returning();
+    const [app] = await db
+      .insert(applications)
+      .values({ tenantId: tenant.id, name: "app", clientId: "app_aaaaaaaaaaaaaaaaaaaa" })
+      .returning();
+
+    expect(tenant.externalIdp).toEqual(idp);
+    expect(app.mayActFor).toEqual([]);
+    expect(app.delegationScopeMode).toBe("intersection");
+  });
+
   it("cascades a tenant delete to every child table", async () => {
     const tenant = await createTenant("tenant-a");
     const [admin] = await db
