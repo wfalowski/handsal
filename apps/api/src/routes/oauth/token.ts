@@ -1,5 +1,5 @@
 import { GRANT_TYPES, OAUTH_ERRORS, tokenRequestSchema } from "@handsal/shared";
-import { Hono, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AppEnv } from "../../app.js";
 import { env } from "../../env.js";
 import { OAuthError } from "../../middleware/error-handler.js";
@@ -16,7 +16,7 @@ import { isFormUrlEncoded, parseBasicAuth } from "./helpers.js";
 const WINDOW_MS = 60_000;
 
 /** Parse a form-encoded body once into `c.var.formBody` (read by `clientIdKey` and the handler). */
-const parseFormBody: MiddlewareHandler<AppEnv> = async (c, next) => {
+export const parseFormBody: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (isFormUrlEncoded(c.req.header("content-type"))) {
     const raw = await c.req.parseBody();
     const body: Record<string, string> = {};
@@ -30,6 +30,34 @@ const parseFormBody: MiddlewareHandler<AppEnv> = async (c, next) => {
 
 function invalidRequest(description: string): OAuthError {
   return new OAuthError(OAUTH_ERRORS.INVALID_REQUEST, 400, description);
+}
+
+/**
+ * Authenticate the caller of a form-encoded endpoint that only needs client auth
+ * (introspect, revoke): Basic or body credentials per the app's registered method.
+ * Requires `parseFormBody` to have run.
+ */
+export async function authenticateFormClient(
+  c: Context<AppEnv>,
+): Promise<AuthenticatedApplication> {
+  const body = c.var.formBody;
+  if (!body) throw invalidRequest("Content-Type must be application/x-www-form-urlencoded");
+  const basic = parseBasicAuth(c.req.header("Authorization"));
+  // RFC 6749 §2.3: a client must not use more than one authentication method.
+  if (basic && body.client_secret !== undefined) {
+    throw invalidRequest("Multiple client authentication methods");
+  }
+  const clientId = basic?.clientId ?? body.client_id;
+  const clientSecret = basic?.clientSecret ?? body.client_secret;
+  if (!clientId || !clientSecret) {
+    throw new OAuthError(OAUTH_ERRORS.INVALID_CLIENT, 401, "Client credentials are required");
+  }
+  const { application } = await authenticateClient(
+    c.var.tenant,
+    { clientId, clientSecret, viaBasic: basic !== null },
+    getClientIp(c),
+  );
+  return application;
 }
 
 function splitScopes(scope: string | undefined): string[] {

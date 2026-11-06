@@ -3,6 +3,8 @@ import type { AppEnv } from "../../app.js";
 import { tenantResolver } from "../../middleware/tenant-resolver.js";
 import { createDiscoveryRoutes } from "./discovery.js";
 import { createJwksRoutes } from "./jwks.js";
+import { createIntrospectRoutes } from "./introspect.js";
+import { createRevokeRoutes } from "./revoke.js";
 import { createTokenRoutes } from "./token.js";
 
 // Mounted at /t/:slug. Every route below sees `c.var.tenant`.
@@ -12,3 +14,5 @@ oauthRoutes.use("*", tenantResolver);
 oauthRoutes.route("/oauth/token", createTokenRoutes());
 oauthRoutes.route("/.well-known", createDiscoveryRoutes());
 oauthRoutes.route("/.well-known", createJwksRoutes());
+oauthRoutes.route("/oauth/introspect", createIntrospectRoutes());
+oauthRoutes.route("/oauth/revoke", createRevokeRoutes());

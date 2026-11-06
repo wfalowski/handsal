@@ -46,6 +46,10 @@ export const envSchema = z.object({
   // (unauthenticated Argon2 hammering from one IP stays bounded).
   RATE_LIMIT_TOKEN_IP_MAX: z.coerce.number().int().positive().default(6000),
   RATE_LIMIT_TOKEN_CLIENT_MAX: z.coerce.number().int().positive().default(600),
+  RATE_LIMIT_INTROSPECT_IP_MAX: z.coerce.number().int().positive().default(1200),
+  RATE_LIMIT_INTROSPECT_CLIENT_MAX: z.coerce.number().int().positive().default(600),
+  RATE_LIMIT_REVOKE_IP_MAX: z.coerce.number().int().positive().default(200),
+  RATE_LIMIT_REVOKE_CLIENT_MAX: z.coerce.number().int().positive().default(100),
   TOKEN_EVENTS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 });
 

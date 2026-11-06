@@ -1,0 +1,1 @@
+CREATE INDEX "idx_revoked_tokens_tenant_id" ON "revoked_tokens" USING btree ("tenant_id");
