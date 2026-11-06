@@ -10,14 +10,14 @@ Handsal is a self-hostable, multi-tenant machine-to-machine OAuth 2.0 authorizat
 - ES256 JWTs with per-tenant keys; key rotation (manual or every N days) with a grace period; JWKS and discovery documents (RFC 8414 / OIDC).
 - Token introspection (RFC 7662) and revocation (RFC 7009); "revoke all" per application and per tenant.
 - Client secret rotation with an overlap window (default 24 h).
+- `private_key_jwt` client authentication (RFC 7523, ES256 / P-256 public keys per application, key rotation with a grace period), see the [integration guide](docs/integration.md#5-authenticating-with-private_key_jwt).
+- AI-agent applications (`kind: agent`) with guardrails (allowed source CIDRs, scope ceiling per token, hourly token budget) and per-task activity in the token log, see [AI agent applications](docs/integration.md#6-ai-agent-applications).
 - Admin UI (tenants, applications, resources and scopes, token log, settings) and a management API (session cookie or `ADMIN_API_KEY`).
 - Token log with configurable retention, security events as structured JSON logs, in-memory rate limits.
 - Headless mode (`ENABLE_ADMIN_PANEL=false`) for a pure issuer.
 
 ## Coming next (agents)
 
-- `private_key_jwt` client authentication (RFC 7523).
-- Agent application kind with guardrails (scope ceiling, hourly token budget, allowed CIDRs).
 - Human approval for sensitive scopes (`agent_policy = approval`).
 - Token exchange (RFC 8693) with the `act` claim for delegation.
 

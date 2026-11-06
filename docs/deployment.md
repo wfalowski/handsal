@@ -74,6 +74,16 @@ location / {
 
 Set `TRUST_PROXY=true` and `TRUST_PROXY_HOP_COUNT` to the number of proxies in front of Handsal (1 for a single proxy, 2 for a CDN plus a proxy). The client IP is the entry that many positions from the right of `X-Forwarded-For`; entries further left are client-controlled and ignored. Without `TRUST_PROXY=true`, all requests share the proxy's address: per-IP rate limits collapse into one bucket and token events and security logs record the proxy IP. A startup warning reminds you in production. A request body above 16 KiB on `/t/*` is rejected with 413.
 
+### Reverse proxies and agent CIDR rules
+
+An `agent` application's `allowedCidrs` are checked against the same client IP as the rate limits and token events (`TRUST_PROXY`, `TRUST_PROXY_HOP_COUNT`, `X-Forwarded-For` counted from the right, then `X-Real-IP`). So the rule is only as good as that configuration:
+
+- Behind a proxy, set `TRUST_PROXY=true` and the exact `TRUST_PROXY_HOP_COUNT`. With `TRUST_PROXY=false` Handsal sees the proxy's address, so a CIDR list either denies every agent or, if it contains the proxy's range, admits anyone who can reach the proxy.
+- A hop count that is too small selects an address added by a proxy, not the client; one that is too large selects an entry the client wrote itself and can therefore spoof to satisfy the list. Count only proxies you operate.
+- Make the proxy overwrite or append `X-Forwarded-For` (never pass a client-supplied value through unchanged), and do not expose port 3000 directly: with `TRUST_PROXY=true` a direct caller can send any `X-Forwarded-For` or `X-Real-IP`.
+
+Denied requests are logged as token events with reason `cidr_denied` and the IP that was evaluated; check it after the first deployment. Treat CIDRs as one layer next to `private_key_jwt`, not as the only control.
+
 Point your orchestrator at `GET /health` (process is up) and `GET /ready` (executes `select 1`; 503 `db_unavailable` otherwise).
 
 ## Database
@@ -107,6 +117,17 @@ Migrations are forward-only and run at process start, before the server accepts 
 
 Rate limits are per process (in memory), so with N replicas the effective limit is N times the configured value.
 
+### Several replicas
+
+State that is per process (in memory) and does not span replicas:
+
+- Rate-limit counters (above).
+- The `jti` replay cache for `private_key_jwt` assertions: a captured assertion can be used once on each replica until it expires (assertion lifetime is at most 300 s plus a 60 s tolerance). Restarting a process also empties its cache.
+
+Agent token budgets (`tokenBudgetPerHour`) are counted from the token log in PostgreSQL, so they are shared by all replicas; they are read just before issuing, so simultaneous requests can exceed the budget by about the number in flight. Token events are the source of the count, so shortening `TOKEN_EVENTS_RETENTION_DAYS` below one day would break budgets (keep it at 1 or more).
+
+A shared (Redis) store for rate limits and the replay cache is on the post-MVP backlog (`Tasks.md`). Until then, run a single replica or add limits at the proxy.
+
 ## Signing key rotation
 
 Each tenant has exactly one `active` key. New tokens are always signed with it, never with a retiring key.
@@ -134,7 +155,7 @@ Revoking a token (`/oauth/revoke`), "revoke all" (application or tenant), disabl
 ## Observability
 
 - Logs are pino JSON on stdout (`LOG_LEVEL`, default `info`); each request is logged, and an `X-Request-Id` header is accepted or generated and echoed back.
-- Security events carry `"security": true`, `"module": "security"`, an `event` name and a `severity` (`LOW` logs as info, `MEDIUM`/`HIGH` as warn, `CRITICAL` as fatal). Events: `client_auth_failure`, `admin_login_failure`, `admin_login_success`, `admin_logout`, `admin_auth_failure`, `rate_limit_exceeded`, `invalid_scope_request`, `malformed_request`, `unsupported_grant_type`. Failure logs include `reason` (`unknown_client`, `auth_method_mismatch`, `bad_secret`, `client_disabled`) that is never returned to the caller. Alert on bursts of `client_auth_failure` and `rate_limit_exceeded`.
+- Security events carry `"security": true`, `"module": "security"`, an `event` name and a `severity` (`LOW` logs as info, `MEDIUM`/`HIGH` as warn, `CRITICAL` as fatal). Events: `client_auth_failure`, `admin_login_failure`, `admin_login_success`, `admin_logout`, `admin_auth_failure`, `rate_limit_exceeded`, `invalid_scope_request`, `malformed_request`, `unsupported_grant_type`. Failure logs include `reason` (`unknown_client`, `auth_method_mismatch`, `bad_secret`, `client_disabled`, and for `private_key_jwt` `bad_assertion`, `unknown_assertion_key`, `assertion_expired`, `assertion_replayed`) that is never returned to the caller. Alert on bursts of `client_auth_failure` and `rate_limit_exceeded`.
 - The token log (UI "Tokens", `GET /api/tenants/:tenantId/token-events`) records issued, denied and revoked events with reason, scopes, `jti` and source IP.
 - Background jobs (key rotation and retirement hourly, revoked-token purge hourly, token-log retention daily) run in-process and log failures as `Job failed`.
 - Shutdown on `SIGTERM` is graceful (10 s limit).
