@@ -15,6 +15,8 @@ const logger = createLogger("error-handler");
 /** RFC 6749 §5.2 error, thrown from OAuth routes (`/t/:slug/...`). */
 export class OAuthError extends Error {
   public securityLogged = false;
+  /** Internal failure reason for token events/logs (e.g. `bad_secret`); never sent to the client. */
+  public reason?: string;
 
   constructor(
     public readonly errorCode: string,
