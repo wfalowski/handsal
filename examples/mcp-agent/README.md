@@ -24,6 +24,7 @@ A reference MCP server (stdio) for the agent runtime side of Handsal. It holds a
 | `HANDSAL_PRIVATE_KEY_FILE` | yes | Path to the private key PEM. |
 | `HANDSAL_APPROVAL_WAIT_SECONDS` | no (90) | How long one tool call waits for a human approval before answering "still waiting". |
 | `HANDSAL_APPROVALS_URL` | no | Link to the tenant's Approvals page, included in the "waiting" message. |
+| `HANDSAL_HTTP_TIMEOUT_SECONDS` | no (60) | Timeout of the API call, including reading the response. Token endpoint requests always time out after 15 s. |
 
 A missing or invalid variable, an unreadable key file or a non-P-256 key stops the server at startup with exit code 1 and a message naming the variable.
 
@@ -60,9 +61,11 @@ claude mcp add handsal-agent \
 
 ## The tool
 
-`handsal_fetch` takes `url`, `method` (`GET` by default), optional `body` and `content_type` (`application/json` by default when a body is sent), `resource` (the Handsal audience), `scope` (space-separated), `task_id` (1 to 128 characters; passed to Handsal unchanged, so the admin UI groups the calls under one task), and optional `justification` and `actor_hint`, both shown to the human approver.
+`handsal_fetch` takes `url`, `method` (`GET` by default), optional `body` and `content_type` (`application/json` by default when a body is sent), `resource` (the Handsal audience), `scope` (space-separated), `task_id` (1 to 128 characters of `A-Za-z0-9._:-`; passed to Handsal unchanged, so the admin UI groups the calls under one task), and optional `justification` and `actor_hint`, both shown to the human approver.
 
-The `url` must be under `resource` (the same URL or a path below it); otherwise the call is refused before any token is requested. Redirects are not followed, so the token is never sent anywhere else. Tokens are cached in memory per resource, scope and `task_id` until 10 seconds before they expire.
+The `url` must be under `resource`: same scheme, host and port, and the same path or a path below it. Paths with encoded separators (`%2F`, `%5C`) or `..` segments are refused. A refused call never requests a token. Redirects are not followed, so the token is never sent anywhere else.
+
+Ordinary tokens are cached in memory per resource, scope and `task_id` until 10 seconds before they expire; a different `task_id` or scope always gets its own token. A token obtained through a human approval is never cached: it is used for the one HTTP call that asked for it, and the next call needs a new approval. Identical calls running at the same time share one token request, so parallel calls cannot use up one approval.
 
 ### A normal call
 
@@ -81,7 +84,7 @@ content-type: application/json
 {"id":4411,"amount":120.5,"status":"paid"}
 ```
 
-Bodies longer than 64 KiB are cut and end with `[truncated]`. A Handsal refusal (`invalid_scope`, `unauthorized_client`, a `429` budget limit with "retry after N s", ...) comes back as an error result with the error code and description.
+The server stops reading bodies after 64 KiB and ends them with `[truncated]`. A Handsal refusal (`invalid_scope`, `unauthorized_client`, a `429` budget limit with "retry after N s", ...) comes back as an error result with the error code and description.
 
 ### An approval-gated call
 
@@ -91,16 +94,26 @@ The model calls with a scope whose agent policy is `approval`:
 {"url":"https://api.acme.io/invoices/4411/refund","method":"POST","body":"{\"amount\":120.5}","resource":"https://api.acme.io/invoices","scope":"invoices:refund","task_id":"refund-4411","justification":"Customer asked for a refund of order 4411","actor_hint":"jane@acme.example"}
 ```
 
-Handsal answers `authorization_pending` and an approval card appears in the admin UI. The server polls for up to `HANDSAL_APPROVAL_WAIT_SECONDS`. If nobody decides in that time, the model sees:
+Handsal answers `authorization_pending` and an approval card appears in the admin UI. The server polls for up to `HANDSAL_APPROVAL_WAIT_SECONDS`. A network error, `5xx` or `429` during polling is retried up to 3 times; after that, or if nobody decides in time, the model sees:
 
 ```
 Waiting for human approval (approval_id 6f1c2c1e-...). Waited 90 s. A human must approve this request in the Handsal admin UI at https://auth.example.com/t/<tenantId>/approvals. Call handsal_fetch again with the same arguments to keep waiting; the request will not be duplicated.
 ```
 
-Calling again with the same arguments resumes the same approval (Handsal returns the same `approval_id` for a repeated request). Once a human approves, the next poll returns the token and the model sees the `HTTP 200 ...` response of the refund call. If the human denies it, or nobody decides within 30 minutes, the model gets an error result (`access_denied` or `expired_token`) and has to start a new request.
+Calling again with the same arguments resumes the same approval (Handsal returns the same `approval_id` for a repeated request). Once a human approves, the next poll returns the token and the model sees the response of the refund call, marked as approved:
+
+```
+HTTP 200 OK (sent with a human-approved token, valid for this call only)
+content-type: application/json
+
+{"id":4411,"status":"refunded"}
+```
+
+The approval covers this one call. Another refund, even with the same `task_id`, needs a new approval. If the human denies it, or nobody decides within 30 minutes, the model gets an error result (`access_denied` or `expired_token`) and has to start a new request.
 
 ## Security notes
 
 - The key file must be readable only by the user that runs the server (`chmod 600 key.pem`). Anyone who can read it can act as the agent.
 - If the agent application has `allowed_cidrs`, they must include the egress address of the machine running this server, or every token request fails with `unauthorized_client`.
-- Tokens are cached in memory only and disappear when the process exits. Nothing is written to disk and nothing is logged.
+- Tokens are cached in memory only and disappear when the process exits; expired entries are dropped. Nothing is written to disk and nothing is logged.
+- Error text from the token endpoint is shortened to 300 characters and cleaned of tokens and client assertions before the model sees it.

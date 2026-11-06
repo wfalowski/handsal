@@ -6,17 +6,26 @@ import { z } from "zod";
 import { HandsalClient } from "./handsal.js";
 import {
   createFetchTool,
+  DEFAULT_HTTP_TIMEOUT_SECONDS,
   FETCH_TOOL_DESCRIPTION,
   FETCH_TOOL_NAME,
   fetchToolInput,
 } from "./tool.js";
+
+/** An optional whole number of seconds; unset or empty means the default. */
+const seconds = (fallback: number, min: number, max: number) =>
+  z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.coerce.number().int().min(min).max(max).default(fallback),
+  );
 
 const envSchema = z.object({
   HANDSAL_TOKEN_ENDPOINT: z.url(),
   HANDSAL_CLIENT_ID: z.string().min(1),
   HANDSAL_KID: z.string().min(1),
   HANDSAL_PRIVATE_KEY_FILE: z.string().min(1),
-  HANDSAL_APPROVAL_WAIT_SECONDS: z.coerce.number().int().min(0).max(3600).default(90),
+  HANDSAL_APPROVAL_WAIT_SECONDS: seconds(90, 0, 3600),
+  HANDSAL_HTTP_TIMEOUT_SECONDS: seconds(DEFAULT_HTTP_TIMEOUT_SECONDS, 1, 3600),
   HANDSAL_APPROVALS_URL: z.url().optional(),
 });
 
@@ -58,6 +67,14 @@ const server = new McpServer({ name: "handsal-agent", version: "0.0.1" });
 server.registerTool(
   FETCH_TOOL_NAME,
   { description: FETCH_TOOL_DESCRIPTION, inputSchema: fetchToolInput },
-  createFetchTool({ client, approvalsUrl: env.HANDSAL_APPROVALS_URL }),
+  createFetchTool({
+    client,
+    approvalsUrl: env.HANDSAL_APPROVALS_URL,
+    timeoutSeconds: env.HANDSAL_HTTP_TIMEOUT_SECONDS,
+  }),
 );
-await server.connect(new StdioServerTransport());
+try {
+  await server.connect(new StdioServerTransport());
+} catch (err) {
+  fail(`cannot start the stdio transport: ${(err as Error).message}`);
+}

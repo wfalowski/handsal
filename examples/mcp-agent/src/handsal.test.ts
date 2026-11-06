@@ -13,7 +13,7 @@ const sec1Pem = privateKey.export({ type: "sec1", format: "pem" }).toString();
 
 interface Scripted {
   status: number;
-  body: Record<string, unknown>;
+  body: Record<string, unknown> | ((form: Record<string, string>) => Record<string, unknown>);
   headers?: Record<string, string>;
 }
 
@@ -68,9 +68,9 @@ beforeAll(async () => {
         return;
       }
       requests.push(form);
-      const next = script.shift() ?? { status: 500, body: { error: "script_exhausted" } };
+      const next: Scripted = script.shift() ?? { status: 500, body: { error: "script_exhausted" } };
       res.writeHead(next.status, { "content-type": "application/json", ...next.headers });
-      res.end(JSON.stringify(next.body));
+      res.end(JSON.stringify(typeof next.body === "function" ? next.body(form) : next.body));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -171,6 +171,120 @@ describe("HandsalClient", () => {
     });
     expect(requests).toHaveLength(2);
   }, 10_000);
+
+  it("never caches a token obtained through an approval", async () => {
+    script = [
+      { status: 400, body: pendingBody },
+      { status: 200, body: tokenBody("tok-approved") },
+      { status: 400, body: { ...pendingBody, approval_id: "ap-2" } },
+      { status: 200, body: tokenBody("tok-approved-2") },
+    ];
+    const c = client();
+    expect(await c.getToken(request)).toMatchObject({
+      accessToken: "tok-approved",
+      viaApproval: true,
+    });
+    expect(await c.getToken(request)).toMatchObject({
+      accessToken: "tok-approved-2",
+      viaApproval: true,
+    });
+    expect(requests.map((r) => r.grant_type)).toEqual([
+      "client_credentials",
+      "urn:handsal:params:grant-type:approval",
+      "client_credentials",
+      "urn:handsal:params:grant-type:approval",
+    ]);
+  }, 10_000);
+
+  it("shares one approval between concurrent identical calls", async () => {
+    script = [
+      { status: 400, body: pendingBody },
+      { status: 200, body: tokenBody("tok-shared") },
+    ];
+    const c = client();
+    const [a, b] = await Promise.all([c.getToken(request), c.getToken(request)]);
+    expect(a).toMatchObject({ kind: "token", accessToken: "tok-shared" });
+    expect(b).toMatchObject({ kind: "token", accessToken: "tok-shared" });
+    expect(requests).toHaveLength(2);
+  }, 10_000);
+
+  it("never shares a cached token across task_id or scope", async () => {
+    script = [
+      { status: 200, body: tokenBody("tok-a") },
+      { status: 200, body: tokenBody("tok-b") },
+      { status: 200, body: tokenBody("tok-c") },
+    ];
+    const c = client();
+    expect(await c.getToken(request)).toMatchObject({ accessToken: "tok-a", viaApproval: false });
+    expect(await c.getToken({ ...request, taskId: "task-2" })).toMatchObject({
+      accessToken: "tok-b",
+    });
+    expect(await c.getToken({ ...request, scope: "invoices:write" })).toMatchObject({
+      accessToken: "tok-c",
+    });
+    expect(requests).toHaveLength(3);
+  });
+
+  it("polls at once when an auto-approve rule answers interval 0", async () => {
+    script = [
+      { status: 400, body: { ...pendingBody, interval: 0 } },
+      { status: 200, body: tokenBody("tok-rule") },
+    ];
+    const started = Date.now();
+    expect(await client().getToken(request)).toMatchObject({ accessToken: "tok-rule" });
+    expect(Date.now() - started).toBeLessThan(900);
+  });
+
+  it("keeps waiting through transient failures while polling", async () => {
+    script = [
+      { status: 400, body: pendingBody },
+      { status: 502, body: {} },
+      { status: 429, body: { error: "too_many_requests", error_description: "slow" } },
+      { status: 200, body: tokenBody("tok-after-blip") },
+    ];
+    expect(await client().getToken(request)).toMatchObject({ accessToken: "tok-after-blip" });
+  }, 10_000);
+
+  it("gives up as pending (not denied) after repeated transient failures", async () => {
+    script = [
+      { status: 400, body: pendingBody },
+      { status: 503, body: {} },
+      { status: 503, body: {} },
+      { status: 503, body: {} },
+      { status: 503, body: {} },
+    ];
+    expect(await client().getToken(request)).toMatchObject({
+      kind: "pending",
+      approvalId: "ap-1",
+    });
+    expect(requests).toHaveLength(5);
+  }, 15_000);
+
+  it("redacts and caps error descriptions", async () => {
+    script = [
+      {
+        status: 400,
+        body: (form) => ({
+          error: "invalid_request",
+          error_description: `echo: client_assertion=${form.client_assertion} raw ${form.client_assertion} ${"x".repeat(1000)}`,
+        }),
+      },
+    ];
+    const result = await client().getToken(request);
+    expect(result.kind).toBe("denied");
+    const description = result.kind === "denied" ? result.description : "";
+    expect(description.length).toBeLessThanOrEqual(300);
+    expect(description).toContain("client_assertion=[redacted] raw [redacted]");
+    expect(description).not.toMatch(/eyJ/);
+  });
+
+  it("rejects an empty access_token", async () => {
+    script = [{ status: 200, body: tokenBody("") }];
+    expect(await client().getToken(request)).toMatchObject({
+      kind: "denied",
+      error: "invalid_response",
+    });
+  });
 
   it("reports Retry-After on 429", async () => {
     script = [
