@@ -1,5 +1,5 @@
-import { db, revokedTokens, tenants } from "@handsal/db";
-import { eq, lt, sql } from "drizzle-orm";
+import { db, revokedTokens } from "@handsal/db";
+import { lt, sql } from "drizzle-orm";
 import { decodeJwt } from "jose";
 import { createLogger } from "../utils/logger.js";
 import type { AuthenticatedApplication } from "./client-auth.service.js";

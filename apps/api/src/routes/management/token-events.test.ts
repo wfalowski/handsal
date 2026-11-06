@@ -138,7 +138,7 @@ describe("token events", () => {
     const s = await setup();
     for (const path of [
       "/token-events?limit=0",
-      "/applications/" + randomUUID() + "/token-events?limit=0",
+      `/applications/${randomUUID()}/token-events?limit=0`,
     ]) {
       const res = await s.get(path);
       expect(res.status).toBe(400);

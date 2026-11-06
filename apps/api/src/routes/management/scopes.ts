@@ -1,4 +1,4 @@
-import { scopeCreateSchema, scopeDtoSchema, scopeUpdateSchema } from "@handsal/shared";
+import { scopeCreateSchema, scopeUpdateSchema } from "@handsal/shared";
 import { type Context, Hono } from "hono";
 import type { AdminEnv } from "../../middleware/admin-auth.js";
 import { requireTenantAccess } from "../../middleware/tenant-access.js";
