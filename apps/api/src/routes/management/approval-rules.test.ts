@@ -1,6 +1,7 @@
 // Integration test: real Postgres through the full app.
-import { pool, runMigrations } from "@handsal/db";
+import { db, pool, runMigrations, scopes } from "@handsal/db";
 import type { TenantRole } from "@handsal/shared";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { app } from "../../app.js";
 import {
@@ -36,13 +37,20 @@ const call = (s: Session, method: string, path: string, body?: unknown) =>
 
 async function setup() {
   const tenant = await createTenant();
-  const { resource, scopes } = await createResourceWithScopes(
+  const { resource, scopes: created } = await createResourceWithScopes(
     tenant.id,
     "https://api.acme.io/payments",
-    ["payments:write"],
+    ["payments:write", "payments:read"],
     { name: "Payments" },
   );
-  return { tenant, resource, scope: scopes[0], base: `/api/tenants/${tenant.id}/approval-rules` };
+  await db.update(scopes).set({ agentPolicy: "approval" }).where(eq(scopes.id, created[0].id));
+  return {
+    tenant,
+    resource,
+    scope: created[0],
+    autoScope: created[1],
+    base: `/api/tenants/${tenant.id}/approval-rules`,
+  };
 }
 
 describe("approval rules management", () => {
@@ -82,6 +90,25 @@ describe("approval rules management", () => {
     });
     expect(bad.status).toBe(400);
     expect((await bad.json()).error).toBe("validation_error");
+  });
+
+  it("task_id_prefix-only condition → 400 invalid_rule_condition", async () => {
+    const s = await setup();
+    const admin = await sessionFor(s.tenant.id, "admin");
+    const res = await call(admin, "POST", s.base, {
+      scopeId: s.scope.id,
+      condition: { task_id_prefix: "refund-" },
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("invalid_rule_condition");
+  });
+
+  it("scope whose agent_policy is not approval → 400 scope_not_approval", async () => {
+    const s = await setup();
+    const admin = await sessionFor(s.tenant.id, "admin");
+    const res = await call(admin, "POST", s.base, { scopeId: s.autoScope.id });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("scope_not_approval");
   });
 
   it("auditor list → 200, create/delete → 403", async () => {

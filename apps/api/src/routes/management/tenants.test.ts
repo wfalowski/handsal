@@ -173,6 +173,7 @@ describe("approval webhook", () => {
     const auth = { authorization: `Bearer ${API_KEY}` };
     const body = { approvalWebhookUrl: "http://hooks.example.com/handsal" };
     expect((await jsonRequest(apiKeyApp, "PATCH", path, body, auth)).status).toBe(200);
+    const prevNodeEnv = env.NODE_ENV;
     env.NODE_ENV = "production";
     try {
       const res = await jsonRequest(apiKeyApp, "PATCH", path, body, auth);
@@ -181,7 +182,7 @@ describe("approval webhook", () => {
       const ok = await jsonRequest(apiKeyApp, "PATCH", path, { approvalWebhookUrl: URL_ }, auth);
       expect(ok.status).toBe(200);
     } finally {
-      env.NODE_ENV = "test";
+      env.NODE_ENV = prevNodeEnv;
     }
   });
 });

@@ -11,7 +11,7 @@ export type RuleCandidate = { applicationId: string; taskId: string | null; scop
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** All keys ANDed; `{}` matches every candidate. */
+/** All keys ANDed; `{}` matches every candidate. The jsonb condition is trusted as written by the validated API (not re-parsed on read); junk values fail closed. */
 export function conditionMatches(condition: ApprovalCondition, candidate: RuleCandidate): boolean {
   if (condition.application_ids && !condition.application_ids.includes(candidate.applicationId))
     return false;
@@ -25,6 +25,8 @@ export function conditionMatches(condition: ApprovalCondition, candidate: RuleCa
 /**
  * The first matching rule (by `created_at`) when EVERY approval scope of the request has at least
  * one matching rule; otherwise null. A rule on one scope never approves another scope.
+ * Evaluated only when a request row is created: a pending row from before a rule existed keeps
+ * waiting for a human (accepted).
  */
 export async function findMatchingRule(
   tenantId: string,
@@ -90,14 +92,26 @@ export async function countApprovalRules(tenantId: string): Promise<number> {
   return row.n;
 }
 
-/** 400 `invalid_scope_ids` when the scope is not in this tenant; 409 on a duplicate `(scope, condition)`. */
+/**
+ * 400 `invalid_rule_condition` for a `task_id_prefix`-only condition, `invalid_scope_ids` when the
+ * scope is not in this tenant, `scope_not_approval` unless its policy is `approval`; 409 on a
+ * duplicate `(scope, condition)`.
+ */
 export async function createApprovalRule(
   tenantId: string,
   input: ApprovalRuleCreateInput,
   actor: Actor,
 ): Promise<ApprovalRuleDto> {
+  const keys = Object.keys(input.condition);
+  if (keys.length === 1 && keys[0] === "task_id_prefix") {
+    throw new ApiError(
+      400,
+      "invalid_rule_condition",
+      "task_id is asserted by the agent; combine task_id_prefix with application_ids",
+    );
+  }
   const [scope] = await db
-    .select({ id: scopes.id })
+    .select({ id: scopes.id, agentPolicy: scopes.agentPolicy })
     .from(scopes)
     .where(and(eq(scopes.tenantId, tenantId), eq(scopes.id, input.scopeId)))
     .limit(1);
@@ -105,6 +119,14 @@ export async function createApprovalRule(
     throw new ApiError(400, "invalid_scope_ids", "Some scope ids do not exist in this tenant", {
       unknown: [input.scopeId],
     });
+  }
+  // A rule on an auto/never scope would sit dormant and silently fire once the policy is tightened.
+  if (scope.agentPolicy !== "approval") {
+    throw new ApiError(
+      400,
+      "scope_not_approval",
+      "Rules apply only to scopes with agent_policy=approval",
+    );
   }
   // jsonb equality ignores key order. shortcut: check-then-insert can race into a duplicate; harmless (both rules match identically), a unique index on (tenant_id, scope_id, condition) would make it exact.
   const [dup] = await db

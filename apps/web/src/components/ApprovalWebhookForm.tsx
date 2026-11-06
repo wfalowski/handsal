@@ -7,9 +7,10 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { Input } from "./Input";
 import { useToast } from "./Toast";
 
-const isHttps = (s: string) => {
+// http:// is allowed here for local receivers; the API still enforces https in production.
+const isHttpUrl = (s: string) => {
   try {
-    return new URL(s).protocol === "https:";
+    return ["http:", "https:"].includes(new URL(s).protocol);
   } catch {
     return false;
   }
@@ -25,7 +26,8 @@ export function ApprovalWebhookForm({ tenant, canEdit }: { tenant: TenantDto; ca
   const [url, setUrl] = useState(savedUrl);
   const [secret, setSecret] = useState("");
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const urlError = url.trim() && !isHttps(url.trim()) ? "Must be an https:// URL" : undefined;
+  const urlError =
+    url.trim() && !isHttpUrl(url.trim()) ? "Must start with http:// or https://" : undefined;
   const secretError =
     secret && secret.length < MIN_SECRET ? `At least ${MIN_SECRET} characters` : undefined;
   const dirty = url.trim() !== savedUrl || secret !== "";

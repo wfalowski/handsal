@@ -179,12 +179,12 @@ Requests of `agent` applications for `approval` scopes (see [Human approval](#hu
 
 ### Approval rules
 
-Auto-approve rules: when every `approval` scope of a request has at least one matching rule, the request is approved without a human (`decidedBy.kind` is `rule`). A rule on one scope never approves another scope. Rule: `{id, scopeId, scopeName, resourceName, condition, action:"auto_approve", createdBy, createdAt}`. `condition` keys are ANDed and all optional: `application_ids` (up to 50 UUIDs), `task_id_prefix` (1-128 chars; the request needs a `task_id` starting with it), `max_scopes` (1-50; at most this many scopes in the request); `{}` matches every request for the scope. Unknown keys are `400 validation_error`. There is no PATCH: delete and recreate. Rules are managed through the API only.
+Auto-approve rules: when every `approval` scope of a request has at least one matching rule, the request is approved without a human (`decidedBy.kind` is `rule`). A rule on one scope never approves another scope. Rule: `{id, scopeId, scopeName, resourceName, condition, action:"auto_approve", createdBy, createdAt}`. `condition` keys are ANDed and all optional: `application_ids` (up to 50 UUIDs), `task_id_prefix` (1-128 chars; the request needs a `task_id` starting with it), `max_scopes` (1-50; at most this many scopes in the request); `{}` matches every request for the scope. Unknown keys are `400 validation_error`. `task_id` is asserted by the agent and is not an authorization boundary, so a condition with only `task_id_prefix` is `400 invalid_rule_condition`; combine it with `application_ids`. A rule can only be created on a scope with `agent_policy=approval`. There is no PATCH: delete and recreate. Rules are managed through the API only.
 
 | Method | Path | Min role | Body | Success | Specific errors |
 |---|---|---|---|---|---|
 | GET | `.../approval-rules` | auditor | none | 200 `{items:[rule]}`, oldest first | |
-| POST | `.../approval-rules` | admin | `{scopeId, condition?}` | 201 rule | 400 `invalid_scope_ids` (scope not in this tenant), 409 `approval_rule_exists` (same scope and condition) |
+| POST | `.../approval-rules` | admin | `{scopeId, condition?}` | 201 rule | 400 `invalid_scope_ids` (scope not in this tenant), `scope_not_approval` (scope `agent_policy` is not `approval`), `invalid_rule_condition` (`task_id_prefix` alone), 409 `approval_rule_exists` (same scope and condition) |
 | DELETE | `.../approval-rules/:ruleId` | admin | none | 204 | 404 `approval_rule_not_found` |
 
 ### Resources and scopes

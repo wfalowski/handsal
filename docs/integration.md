@@ -379,11 +379,11 @@ curl -s https://auth.example.com/t/acme/oauth/token \
 
 ### Auto-approve rules
 
-A rule lets a known-safe pattern skip the human. It is tied to one `approval` scope and has an optional condition (all keys ANDed): `application_ids`, `task_id_prefix`, `max_scopes`. A request is auto-approved only when every `approval` scope in it is covered by a matching rule. Rules are managed through the API only:
+A rule lets a known-safe pattern skip the human. It is tied to one `approval` scope and has an optional condition (all keys ANDed): `application_ids`, `task_id_prefix`, `max_scopes`. `task_id` is asserted by the agent and is not an authorization boundary: a rule keyed on `task_id_prefix` alone is rejected, so pair it with `application_ids`. A request is auto-approved only when every `approval` scope in it is covered by a matching rule. Rules are managed through the API only:
 
 ```bash
 curl -s -X POST -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
-  -d '{"scopeId":"'$SCOPE_ID'","condition":{"task_id_prefix":"refund-","max_scopes":2}}' \
+  -d '{"scopeId":"'$SCOPE_ID'","condition":{"application_ids":["'$APP_ID'"],"task_id_prefix":"refund-","max_scopes":2}}' \
   https://auth.example.com/api/tenants/$TENANT_ID/approval-rules
 ```
 
