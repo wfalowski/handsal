@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
+import type { tenants } from "@handsal/db";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -17,6 +18,8 @@ export type AppEnv = {
     requestId: string;
     /** Parsed urlencoded body cached by OAuth routes (read by `clientIdKey`). */
     formBody?: Record<string, string>;
+    /** Set by `tenantResolver` on every `/t/:slug` route. */
+    tenant: typeof tenants.$inferSelect;
   };
 };
 
