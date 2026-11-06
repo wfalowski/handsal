@@ -9,3 +9,4 @@ dist/
 .seed-credentials
 .claude/worktrees/
 *.tsbuildinfo
+.playwright-mcp/
