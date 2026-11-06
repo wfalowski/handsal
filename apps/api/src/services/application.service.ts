@@ -39,6 +39,8 @@ export function toApplicationDto(row: ApplicationRow): ApplicationDto {
     allowedCidrs: row.allowedCidrs,
     maxScopesPerToken: row.maxScopesPerToken,
     tokenBudgetPerHour: row.tokenBudgetPerHour,
+    mayActFor: row.mayActFor as ApplicationDto["mayActFor"], // text[] column, values validated on write
+    delegationScopeMode: row.delegationScopeMode,
   };
 }
 
@@ -48,6 +50,8 @@ const AGENT_FIELDS = [
   "allowedCidrs",
   "maxScopesPerToken",
   "tokenBudgetPerHour",
+  "mayActFor",
+  "delegationScopeMode",
 ] as const;
 type AgentFieldsInput = Pick<ApplicationUpdateInput, (typeof AGENT_FIELDS)[number]>;
 
@@ -131,6 +135,8 @@ export async function createApplication(
       allowedCidrs: input.allowedCidrs ?? [],
       maxScopesPerToken: input.maxScopesPerToken ?? null,
       tokenBudgetPerHour: input.tokenBudgetPerHour ?? null,
+      mayActFor: input.mayActFor ?? [],
+      delegationScopeMode: input.delegationScopeMode ?? "intersection",
     })
     .returning()
     .catch(mapNameConflict);
@@ -254,6 +260,8 @@ export async function updateApplication(
     allowedCidrs: input.allowedCidrs === null ? [] : input.allowedCidrs,
     maxScopesPerToken: input.maxScopesPerToken,
     tokenBudgetPerHour: input.tokenBudgetPerHour,
+    mayActFor: input.mayActFor,
+    delegationScopeMode: input.delegationScopeMode,
   };
   // Drizzle rejects an empty SET; an empty PATCH is a no-op read.
   if (Object.values(set).every((v) => v === undefined)) return getApplication(tenantId, appId);

@@ -41,6 +41,7 @@ export function toTenantDto(row: Tenant): TenantDto {
     keyRotationDays: row.keyRotationDays,
     tokensNotBefore: row.tokensNotBefore ? row.tokensNotBefore.toISOString() : null,
     issuer: issuerFor(row.slug),
+    externalIdp: row.externalIdp ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

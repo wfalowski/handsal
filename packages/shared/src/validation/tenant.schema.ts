@@ -32,8 +32,7 @@ export const tenantDtoSchema = z.object({
   keyRotationDays: z.number().int().nullable(),
   tokensNotBefore: z.iso.datetime().nullable(),
   issuer: z.string(),
-  // shortcut: optional until the 6.4 management slice emits it; make `.nullable()` only then.
-  externalIdp: externalIdpSchema.nullable().optional(),
+  externalIdp: externalIdpSchema.nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

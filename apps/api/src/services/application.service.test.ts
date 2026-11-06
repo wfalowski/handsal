@@ -210,6 +210,23 @@ describe("agent applications", () => {
     ]);
   });
 
+  it("delegation fields round-trip on agents; defaults on services; rejected on services", async () => {
+    const tenant = await createTenant();
+    const { application: agent } = await createApplication(tenant.id, {
+      kind: "agent",
+      mayActFor: ["tenant"],
+      delegationScopeMode: "agent_only",
+    });
+    expect(agent).toMatchObject({ mayActFor: ["tenant"], delegationScopeMode: "agent_only" });
+    const cleared = await updateApplication(tenant.id, agent.id, { mayActFor: [] });
+    expect(cleared).toMatchObject({ mayActFor: [], delegationScopeMode: "agent_only" });
+
+    const { application: svc } = await createApplication(tenant.id);
+    expect(svc).toMatchObject({ mayActFor: [], delegationScopeMode: "intersection" });
+    const err = await apiErrorOf(updateApplication(tenant.id, svc.id, { mayActFor: ["users"] }));
+    expect([err.statusCode, err.errorCode]).toEqual([400, "agent_fields_on_service"]);
+  });
+
   it("agent fields on a service → 400 agent_fields_on_service (create and patch)", async () => {
     const tenant = await createTenant();
     const created = await apiErrorOf(createApplication(tenant.id, { maxScopesPerToken: 2 }));

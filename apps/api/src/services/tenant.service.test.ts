@@ -28,6 +28,7 @@ import {
   listTenantsWithStats,
   revokeAllTenantTokens,
   setTenantStatus,
+  toTenantDto,
   updateTenant,
 } from "./tenant.service.js";
 import { recordTokenEvent } from "./token-event.service.js";
@@ -156,6 +157,18 @@ describe("getTenantDetail / updates", () => {
 });
 
 describe("deleteTenant", () => {
+  it("externalIdp defaults to null, sets and clears", async () => {
+    const t = await createTenantRow();
+    expect(toTenantDto(t).externalIdp).toBeNull();
+    const idp = {
+      issuer: "https://i.example.com",
+      jwksUri: "https://i.example.com/j",
+      audience: "a",
+    };
+    expect((await updateTenant(t.id, { externalIdp: idp })).externalIdp).toEqual(idp);
+    expect((await updateTenant(t.id, { externalIdp: null })).externalIdp).toBeNull();
+  });
+
   it("wrong confirmSlug → 400 confirm_slug_mismatch", async () => {
     const t = await createTenantRow({ slug: "acme" });
     const err = await apiErrorOf(deleteTenant(t.id, "acme2"));

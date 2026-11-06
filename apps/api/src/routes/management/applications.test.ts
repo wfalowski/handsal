@@ -125,6 +125,44 @@ describe("applications CRUD", () => {
     expect((await svcPatch.json()).error).toBe("agent_fields_on_service");
   });
 
+  it("delegation fields: agent round-trip, [] clears, service → agent_fields_on_service", async () => {
+    const { tenant, admin, base } = await setup();
+    const res = await req("POST", base, admin.headers, {
+      name: "deleg",
+      kind: "agent",
+      mayActFor: ["users", "services"],
+      delegationScopeMode: "agent_only",
+    });
+    expect(res.status).toBe(201);
+    const agent = (await res.json()).application;
+    expect(agent).toMatchObject({
+      mayActFor: ["users", "services"],
+      delegationScopeMode: "agent_only",
+    });
+
+    const cleared = await req("PATCH", `${base}/${agent.id}`, admin.headers, { mayActFor: [] });
+    expect(await cleared.json()).toMatchObject({
+      mayActFor: [],
+      delegationScopeMode: "agent_only",
+    });
+
+    const { application: svc } = await createApplication(tenant.id);
+    expect(svc).toMatchObject({ mayActFor: [], delegationScopeMode: "intersection" });
+    const onSvcCreate = await req("POST", base, admin.headers, {
+      name: "svc-d",
+      mayActFor: ["users"],
+    });
+    expect((await onSvcCreate.json()).error).toBe("agent_fields_on_service");
+    const onSvcPatch = await req("PATCH", `${base}/${svc.id}`, admin.headers, {
+      delegationScopeMode: "agent_only",
+    });
+    expect((await onSvcPatch.json()).error).toBe("agent_fields_on_service");
+
+    const bad = await req("PATCH", `${base}/${agent.id}`, admin.headers, { mayActFor: ["robots"] });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toBe("validation_error");
+  });
+
   it("invalid create body → 400; duplicate name → 409", async () => {
     const { admin, base } = await setup();
     expect((await req("POST", base, admin.headers, { name: "" })).status).toBe(400);

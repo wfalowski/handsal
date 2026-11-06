@@ -62,6 +62,12 @@ const countOf = async (
   tenantId: string,
 ) => (await db.select({ n: count() }).from(table).where(eq(table.tenantId, tenantId)))[0].n;
 
+const IDP = {
+  issuer: "https://idp.example.com",
+  jwksUri: "https://idp.example.com/jwks.json",
+  audience: "handsal",
+};
+
 /** Every tenant-scoped route with a valid body for that route. */
 const tenantRoutesFor = (t: { id: string; slug: string }, otherUserId: string) => ({
   reads: [
@@ -69,7 +75,7 @@ const tenantRoutesFor = (t: { id: string; slug: string }, otherUserId: string) =
     ["GET", `/api/tenants/${t.id}/members`],
   ] as const,
   mutations: [
-    ["PATCH", `/api/tenants/${t.id}`, { name: "Renamed" }],
+    ["PATCH", `/api/tenants/${t.id}`, { name: "Renamed", externalIdp: IDP }],
     ["POST", `/api/tenants/${t.id}/pause`, undefined],
     ["POST", `/api/tenants/${t.id}/resume`, undefined],
     ["POST", `/api/tenants/${t.id}/revoke-all-tokens`, undefined],
@@ -78,6 +84,29 @@ const tenantRoutesFor = (t: { id: string; slug: string }, otherUserId: string) =
     ["PATCH", `/api/tenants/${t.id}/members/${otherUserId}`, { role: "admin" }],
     ["DELETE", `/api/tenants/${t.id}/members/${otherUserId}`, undefined],
   ] as const,
+});
+
+describe("externalIdp", () => {
+  it("PATCH sets and clears it; DTO emits null by default; http jwksUri → 400", async () => {
+    const t = await createTenant();
+    const s = await sessionFor({ tenantId: t.id, role: "admin" });
+    const path = `/api/tenants/${t.id}`;
+    expect((await (await call(s, "GET", path)).json()).externalIdp).toBeNull();
+
+    const set = await call(s, "PATCH", path, { externalIdp: IDP });
+    expect(set.status).toBe(200);
+    expect((await set.json()).externalIdp).toEqual(IDP);
+    expect((await (await call(s, "GET", path)).json()).externalIdp).toEqual(IDP);
+
+    const bad = await call(s, "PATCH", path, {
+      externalIdp: { ...IDP, jwksUri: "http://idp.example.com/jwks.json" },
+    });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toBe("validation_error");
+
+    const cleared = await call(s, "PATCH", path, { externalIdp: null });
+    expect((await cleared.json()).externalIdp).toBeNull();
+  });
 });
 
 describe("authorization matrix", () => {

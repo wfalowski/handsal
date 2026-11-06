@@ -83,8 +83,6 @@ export const applicationDtoSchema = z.object({
   allowedCidrs: z.array(z.string()),
   maxScopesPerToken: z.number().int().nullable(),
   tokenBudgetPerHour: z.number().int().nullable(),
-  // shortcut: optional until the 6.4 management slice emits them; make required then.
-  mayActFor: z.array(mayActForEnum).optional(),
-  // shortcut: optional until the 6.4 management slice emits them; make required then.
-  delegationScopeMode: delegationScopeMode.optional(),
+  mayActFor: z.array(mayActForEnum),
+  delegationScopeMode,
 });
