@@ -7,5 +7,7 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     setupFiles: ["./src/test/setup.ts"],
     mockReset: true,
+    // Integration tests truncate shared tables; run test files one at a time.
+    fileParallelism: false,
   },
 });
