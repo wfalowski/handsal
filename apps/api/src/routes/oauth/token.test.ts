@@ -804,3 +804,87 @@ describe("approval grant", () => {
     expect(await db.select().from(approvalRequests)).toHaveLength(0);
   });
 });
+
+describe("token exchange grant", () => {
+  const EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange";
+  const ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token";
+
+  async function exchangeSetup() {
+    const s = await setup();
+    const issued = await formRequest(
+      app,
+      tokenUrl(s.tenant.slug),
+      { grant_type: "client_credentials", resource: PAYMENTS, scope: "payments:read" },
+      s.auth,
+    );
+    const subject = (await issued.json()).access_token as string;
+    const agent = await createApplication(s.tenant.id, { kind: "agent", mayActFor: ["services"] });
+    const [read] = await db.select().from(scopesTable).where(eq(scopesTable.name, "payments:read"));
+    await grant(s.tenant.id, agent.application.id, [read.id]);
+    const agentAuth = { Authorization: basic(agent.application.clientId, agent.clientSecret) };
+    const exchange = (fields: Record<string, string> = {}) =>
+      formRequest(
+        app,
+        tokenUrl(s.tenant.slug),
+        {
+          grant_type: EXCHANGE,
+          subject_token: subject,
+          subject_token_type: ACCESS_TOKEN_TYPE,
+          resource: PAYMENTS,
+          ...fields,
+        },
+        agentAuth,
+      );
+    return { ...s, agent: agent.application, exchange };
+  }
+
+  it("response carries issued_token_type and a delegated token", async () => {
+    const s = await exchangeSetup();
+    const res = await s.exchange({ task_id: "task-7" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    const body = await res.json();
+    expect(body).toEqual({
+      access_token: expect.any(String),
+      issued_token_type: ACCESS_TOKEN_TYPE,
+      token_type: "Bearer",
+      expires_in: 3600,
+      scope: "payments:read",
+    });
+    expect(decodeJwt(body.access_token)).toMatchObject({
+      sub: s.application.clientId,
+      act: { sub: s.agent.clientId },
+      client_id: s.agent.clientId,
+      task_id: "task-7",
+    });
+  });
+
+  it("actor_token present → invalid_request", async () => {
+    const s = await exchangeSetup();
+    const res = await s.exchange({ actor_token: "x", actor_token_type: ACCESS_TOKEN_TYPE });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "invalid_request",
+      error_description: "actor_token is not supported",
+    });
+  });
+
+  it("unknown subject_token_type → invalid_request", async () => {
+    const s = await exchangeSetup();
+    const res = await s.exchange({ subject_token_type: "urn:ietf:params:oauth:token-type:saml2" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("invalid_request");
+  });
+
+  it("missing resource → invalid_target; garbage subject → invalid_grant (recorded denied)", async () => {
+    const s = await exchangeSetup();
+    expect((await (await s.exchange({ resource: "" })).json()).error).toBe("invalid_target");
+    const bad = await s.exchange({ subject_token: "not-a-jwt" });
+    expect(await bad.json()).toEqual({
+      error: "invalid_grant",
+      error_description: "Invalid subject_token",
+    });
+    const denied = (await events()).filter((e) => e.outcome === "denied");
+    expect(denied.map((e) => e.reason)).toEqual(["invalid_target", "invalid_subject_token"]);
+  });
+});

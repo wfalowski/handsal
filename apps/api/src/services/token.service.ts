@@ -28,14 +28,14 @@ export interface PendingApproval {
   approvalId: string;
 }
 
-function deny(code: string, description: string, reason: string): never {
+export function deny(code: string, description: string, reason: string): never {
   const err = new OAuthError(code, 400, description);
   err.reason = reason;
   throw err;
 }
 
 /** Agent guardrails (6.2): source CIDR, scope ceiling, hourly budget. No-op for services. */
-async function enforceAgentGuardrails(
+export async function enforceAgentGuardrails(
   tenant: Tenant,
   application: AuthenticatedApplication,
   tokenScopes: string[],
@@ -216,11 +216,24 @@ export async function redeemApproval(
   );
 }
 
+/** Delegation (RFC 8693): the token's `sub` is the subject, `act` names the acting agent chain. */
+export interface Delegation {
+  sub: string;
+  act: Record<string, unknown>;
+}
+
 /** Sign the access token, record the `issued` event and touch `last_token_at`. */
-async function signAndRecord(
+export async function signAndRecord(
   tenant: Tenant,
   application: AuthenticatedApplication,
-  t: { resourceId: string; audience: string; scopes: string[]; ttl: number; taskId?: string },
+  t: {
+    resourceId: string;
+    audience: string;
+    scopes: string[];
+    ttl: number;
+    taskId?: string;
+    delegation?: Delegation;
+  },
   ctx: { sourceIp: string },
 ): Promise<TokenResponse> {
   const iat = Math.floor(Date.now() / 1000);
@@ -231,13 +244,14 @@ async function signAndRecord(
   const { kid, privateKeyPem } = await getActiveKey(tenant.id);
   const accessToken = await signAccessToken(privateKeyPem, kid, {
     iss: `${env.PUBLIC_URL}/t/${tenant.slug}`,
-    sub: application.clientId,
+    sub: t.delegation?.sub ?? application.clientId,
     client_id: application.clientId,
     aud: t.audience,
     scope,
     tenant: tenant.slug,
     client_kind: application.kind,
     ...(t.taskId && { task_id: t.taskId }),
+    ...(t.delegation && { act: t.delegation.act }),
     jti,
     iat,
     exp,
@@ -255,6 +269,7 @@ async function signAndRecord(
     expiresAt: new Date(exp * 1000),
     sourceIp: ctx.sourceIp.slice(0, 45),
     taskId: t.taskId ?? null,
+    actorSub: t.delegation?.sub.slice(0, 255) ?? null,
   });
   try {
     await db

@@ -25,7 +25,11 @@ export function createDiscoveryRoutes() {
       ...(tenant.introspectionEnabled && { introspection_endpoint: `${issuer}/oauth/introspect` }),
       revocation_endpoint: `${issuer}/oauth/revoke`,
       jwks_uri: `${issuer}/.well-known/jwks.json`,
-      grant_types_supported: [GRANT_TYPES.CLIENT_CREDENTIALS, GRANT_TYPES.APPROVAL],
+      grant_types_supported: [
+        GRANT_TYPES.CLIENT_CREDENTIALS,
+        GRANT_TYPES.APPROVAL,
+        GRANT_TYPES.TOKEN_EXCHANGE,
+      ],
       token_endpoint_auth_methods_supported: AUTH_METHODS,
       introspection_endpoint_auth_methods_supported: AUTH_METHODS,
       revocation_endpoint_auth_methods_supported: AUTH_METHODS,

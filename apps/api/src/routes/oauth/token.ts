@@ -4,6 +4,7 @@ import {
   DEFAULTS,
   GRANT_TYPES,
   OAUTH_ERRORS,
+  tokenExchangeSchema,
   tokenRequestSchema,
 } from "@handsal/shared";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
@@ -19,6 +20,7 @@ import {
 } from "../../services/client-auth.service.js";
 import { issueToken, redeemApproval } from "../../services/token.service.js";
 import { recordTokenEvent } from "../../services/token-event.service.js";
+import { exchangeToken } from "../../services/token-exchange.service.js";
 import { getClientIp } from "../../utils/client-ip.js";
 import { isFormUrlEncoded, parseBasicAuth } from "./helpers.js";
 
@@ -105,7 +107,7 @@ function splitScopes(scope: string | undefined): string[] {
 }
 
 /**
- * `POST /t/:slug/oauth/token` (client_credentials, approval polling). Limits are injectable for
+ * `POST /t/:slug/oauth/token` (client_credentials, approval polling, token exchange). Limits are injectable for
  * tests.
  */
 export function createTokenRoutes({
@@ -148,7 +150,8 @@ export function createTokenRoutes({
         if (!body.grant_type) throw invalidRequest("grant_type is required");
         if (
           body.grant_type !== GRANT_TYPES.CLIENT_CREDENTIALS &&
-          body.grant_type !== GRANT_TYPES.APPROVAL
+          body.grant_type !== GRANT_TYPES.APPROVAL &&
+          body.grant_type !== GRANT_TYPES.TOKEN_EXCHANGE
         ) {
           throw new OAuthError(OAUTH_ERRORS.UNSUPPORTED_GRANT_TYPE, 400, "Unsupported grant_type");
         }
@@ -176,6 +179,34 @@ export function createTokenRoutes({
           err.reason = "invalid_target";
           throw err;
         }
+        if (body.grant_type === GRANT_TYPES.TOKEN_EXCHANGE) {
+          if (body.actor_token !== undefined || body.actor_token_type !== undefined) {
+            throw invalidRequest("actor_token is not supported");
+          }
+          const exchange = tokenExchangeSchema.safeParse(body);
+          if (!exchange.success) {
+            const badType = exchange.error.issues.some((i) => i.path[0] === "subject_token_type");
+            throw invalidRequest(
+              badType
+                ? "subject_token_type is missing or unsupported"
+                : "Invalid or missing required parameters",
+            );
+          }
+          return c.json(
+            await exchangeToken(
+              tenant,
+              application,
+              {
+                subjectToken: exchange.data.subject_token,
+                audience: exchange.data.resource,
+                requestedScopes: splitScopes(exchange.data.scope),
+                taskId: exchange.data.task_id,
+              },
+              { sourceIp },
+            ),
+          );
+        }
+
         const parsed = tokenRequestSchema.safeParse(body);
         if (!parsed.success) throw invalidRequest("Invalid or missing required parameters");
 
