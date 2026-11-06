@@ -10,3 +10,4 @@ apps/api/dist
 packages/db/dist
 packages/shared/dist
 .seed-credentials
+.claude

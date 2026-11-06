@@ -14,6 +14,7 @@
       "**/*.json",
       "!node_modules",
       "!docs",
+      "!.claude",
       "!dist",
       "!**/drizzle",
       "!coverage",
