@@ -10,6 +10,7 @@ import { and, asc, count, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { env } from "../env.js";
 import { ApiError } from "../middleware/error-handler.js";
+import { encryptPrivateKey } from "../utils/crypto.js";
 import { ensureActiveKey } from "./signing-key.service.js";
 import { getTokenStats } from "./token-event.service.js";
 
@@ -42,6 +43,9 @@ export function toTenantDto(row: Tenant): TenantDto {
     tokensNotBefore: row.tokensNotBefore ? row.tokensNotBefore.toISOString() : null,
     issuer: issuerFor(row.slug),
     externalIdp: row.externalIdp ?? null,
+    approvalWebhookUrl: row.approvalWebhookUrl,
+    // The secret is write-only.
+    approvalWebhookSecretSet: row.approvalWebhookSecretEnc !== null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -170,8 +174,33 @@ async function updateOne(
 }
 
 export async function updateTenant(tenantId: string, input: TenantUpdateInput): Promise<TenantDto> {
+  const { approvalWebhookSecret, ...rest } = input;
+  if (rest.approvalWebhookUrl) assertWebhookUrl(rest.approvalWebhookUrl);
   // Empty PATCH still bumps updated_at (Drizzle rejects an empty SET).
-  return updateOne(tenantId, { ...input, updatedAt: new Date() });
+  return updateOne(tenantId, {
+    ...rest,
+    // An HMAC key cannot be hashed: AES-256-GCM at rest, like signing keys. `null` clears it.
+    ...(approvalWebhookSecret !== undefined && {
+      approvalWebhookSecretEnc:
+        approvalWebhookSecret === null
+          ? null
+          : encryptPrivateKey(approvalWebhookSecret, env.KEY_ENCRYPTION_SECRET),
+    }),
+    updatedAt: new Date(),
+  });
+}
+
+/** Outbound destination control: https only in production (http allowed for local development). */
+function assertWebhookUrl(url: string): void {
+  const { protocol } = new URL(url);
+  if (protocol === "https:" || (protocol === "http:" && env.NODE_ENV !== "production")) return;
+  throw new ApiError(
+    400,
+    "validation_error",
+    env.NODE_ENV === "production"
+      ? "approvalWebhookUrl must use https"
+      : "approvalWebhookUrl must use http or https",
+  );
 }
 
 export async function setTenantStatus(

@@ -356,6 +356,7 @@ describe("approvals", () => {
       approvedToday: 0,
       deniedToday: 0,
       medianWaitSeconds: null,
+      rules: 0,
     };
     expect(ok(approvalCountsDtoSchema, c)).toBe(true);
     expect(ok(approvalCountsDtoSchema, { ...c, pending: -1 })).toBe(false);

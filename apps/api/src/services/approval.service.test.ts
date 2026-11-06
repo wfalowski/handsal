@@ -3,6 +3,7 @@ import {
   applicationGrants,
   applications,
   approvalRequests,
+  approvalRules,
   db,
   runMigrations,
   scopes,
@@ -15,12 +16,13 @@ import type { OAuthError } from "../middleware/error-handler.js";
 import {
   createApplication,
   createApprovalRequest,
+  createApprovalRule,
   createResourceWithScopes,
   createTenant,
   grant,
   truncateAll,
 } from "../test/factories.js";
-import { decideApproval } from "./approval.service.js";
+import { decideApproval, listApprovals } from "./approval.service.js";
 import type { AuthenticatedApplication } from "./client-auth.service.js";
 import {
   issueToken,
@@ -262,5 +264,89 @@ describe("redeemApproval", () => {
     expect((await reasonOf(redeemApproval(other.tenant, other.app, approvalId, ctx))).code).toBe(
       "invalid_grant",
     );
+  });
+});
+
+describe("auto-approve rules", () => {
+  const write = (s: Awaited<ReturnType<typeof setup>>) => s.scopes[2];
+  const rowOf = async (id: string) =>
+    (await db.select().from(approvalRequests).where(eq(approvalRequests.id, id)))[0];
+
+  it("a matching rule creates an approved row with decided_by_rule_id; DTO and counts show it", async () => {
+    const s = await setup();
+    const rule = await createApprovalRule(s.tenant.id, write(s).id, { task_id_prefix: "refund-" });
+    const { approvalId } = await requestWrite(s, { taskId: "refund-1" });
+    const row = await rowOf(approvalId);
+    expect(row).toMatchObject({ status: "approved", decidedByRuleId: rule.id, decidedBy: null });
+    expect(row.decidedAt).toBeInstanceOf(Date);
+    // Still recorded as a pending event so the Tokens page shows the request.
+    expect((await db.select().from(tokenEvents))[0].outcome).toBe("pending");
+
+    const list = await listApprovals(s.tenant.id, { status: "resolved", limit: 50 });
+    expect(list.items[0].decidedBy).toEqual({ kind: "rule", label: "rule: payments:write" });
+    expect(list.counts.rules).toBe(1);
+  });
+
+  it("the rule-approved row still issues exactly once", async () => {
+    const s = await setup();
+    await createApprovalRule(s.tenant.id, write(s).id);
+    const { approvalId } = await requestWrite(s);
+    const token = (await redeemApproval(s.tenant, s.app, approvalId, ctx)) as TokenResponse;
+    expect(token.scope).toBe("payments:write");
+    expect((await reasonOf(redeemApproval(s.tenant, s.app, approvalId, ctx))).code).toBe(
+      "invalid_grant",
+    );
+  });
+
+  it("a non-matching rule leaves the row pending (per condition key)", async () => {
+    const s = await setup();
+    const other = await createApplication(s.tenant.id, { kind: "agent" });
+    await createApprovalRule(s.tenant.id, write(s).id, {
+      application_ids: [other.application.id],
+    });
+    await createApprovalRule(s.tenant.id, write(s).id, { task_id_prefix: "refund-" });
+    await createApprovalRule(s.tenant.id, write(s).id, { max_scopes: 1 });
+    // Wrong app, null task id, two scopes: every rule fails one key.
+    const res = (await issueToken(
+      s.tenant,
+      s.app,
+      { audience: AUD, requestedScopes: ["payments:read", "payments:write"] },
+      ctx,
+    )) as PendingApproval;
+    expect(await rowOf(res.approvalId)).toMatchObject({ status: "pending", decidedByRuleId: null });
+  });
+
+  it("every approval scope needs its own matching rule", async () => {
+    const s = await setup();
+    await db.update(scopes).set({ agentPolicy: "approval" }).where(eq(scopes.id, s.scopes[1].id));
+    await createApprovalRule(s.tenant.id, write(s).id);
+    const both = { audience: AUD, requestedScopes: ["payments:refund", "payments:write"] };
+    const first = (await issueToken(s.tenant, s.app, both, ctx)) as PendingApproval;
+    expect((await rowOf(first.approvalId)).status).toBe("pending");
+
+    await createApprovalRule(s.tenant.id, s.scopes[1].id);
+    const second = (await issueToken(
+      s.tenant,
+      s.app,
+      { ...both, taskId: "t-2" },
+      ctx,
+    )) as PendingApproval;
+    expect((await rowOf(second.approvalId)).status).toBe("approved");
+  });
+
+  it("a rule of another tenant never matches", async () => {
+    const s = await setup();
+    const other = await setup();
+    await createApprovalRule(other.tenant.id, write(other).id);
+    const { approvalId } = await requestWrite(s);
+    expect((await rowOf(approvalId)).status).toBe("pending");
+  });
+
+  it("deleting the rule leaves decided_by_rule_id null and the row approved", async () => {
+    const s = await setup();
+    const rule = await createApprovalRule(s.tenant.id, write(s).id);
+    const { approvalId } = await requestWrite(s);
+    await db.delete(approvalRules).where(eq(approvalRules.id, rule.id));
+    expect(await rowOf(approvalId)).toMatchObject({ status: "approved", decidedByRuleId: null });
   });
 });

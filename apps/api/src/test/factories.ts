@@ -3,6 +3,7 @@ import {
   applicationGrants,
   applications,
   approvalRequests,
+  approvalRules,
   db,
   resources,
   scopes,
@@ -176,5 +177,15 @@ export async function createApprovalRequest(
       ...over,
     })
     .returning();
+  return row;
+}
+
+/** An auto-approve rule on `scopeId`; `{}` matches every request for that scope. */
+export async function createApprovalRule(
+  tenantId: string,
+  scopeId: string,
+  condition: (typeof approvalRules.$inferInsert)["condition"] = {},
+) {
+  const [row] = await db.insert(approvalRules).values({ tenantId, scopeId, condition }).returning();
   return row;
 }

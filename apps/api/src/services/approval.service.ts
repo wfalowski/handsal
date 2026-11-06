@@ -1,4 +1,4 @@
-import { adminUsers, applications, approvalRequests, db } from "@handsal/db";
+import { adminUsers, applications, approvalRequests, approvalRules, db, scopes } from "@handsal/db";
 import type { ApprovalCountsDto, ApprovalDto, approvalsQuerySchema } from "@handsal/shared";
 import { DEFAULTS } from "@handsal/shared";
 import { and, desc, eq, gt, inArray, lte, type SQL, sql } from "drizzle-orm";
@@ -6,6 +6,8 @@ import type { z } from "zod";
 import type { Actor } from "../middleware/admin-auth.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { createLogger } from "../utils/logger.js";
+import { countApprovalRules, findMatchingRule } from "./approval-rule.service.js";
+import { notifyApprovalPending } from "./approval-webhook.service.js";
 import type { AuthenticatedApplication } from "./client-auth.service.js";
 import type { Tenant } from "./tenant.service.js";
 import { recordTokenEvent } from "./token-event.service.js";
@@ -17,7 +19,9 @@ export type ApprovalRow = typeof approvalRequests.$inferSelect;
 
 /**
  * Open (or reuse) a pending approval for an agent token request and record a `pending` token
- * event. Returns the approval id the agent polls with.
+ * event. Returns the approval id the agent polls with. When every approval scope of the request
+ * has a matching auto-approve rule the row is created already `approved` (the agent still polls
+ * once); otherwise it is `pending` and the tenant webhook is notified.
  */
 export async function createApprovalRequest(
   tenant: Tenant,
@@ -52,6 +56,23 @@ export async function createApprovalRequest(
     .limit(1);
   if (existing) return existing.id;
 
+  const approvalScopes = await db
+    .select({ id: scopes.id })
+    .from(scopes)
+    .where(
+      and(
+        eq(scopes.tenantId, tenant.id),
+        eq(scopes.resourceId, request.resourceId),
+        inArray(scopes.name, request.scopes),
+        eq(scopes.agentPolicy, "approval"),
+      ),
+    );
+  const rule = await findMatchingRule(
+    tenant.id,
+    approvalScopes.map((s) => s.id),
+    { applicationId: application.id, taskId, scopeCount: request.scopes.length },
+  );
+
   const [row] = await db
     .insert(approvalRequests)
     .values({
@@ -64,8 +85,9 @@ export async function createApprovalRequest(
       taskId,
       justification: request.justification ?? null,
       expiresAt: sql`now() + make_interval(secs => ${DEFAULTS.APPROVAL_TTL_SECONDS})`,
+      ...(rule && { status: "approved" as const, decidedByRuleId: rule.id, decidedAt: sql`now()` }),
     })
-    .returning({ id: approvalRequests.id });
+    .returning();
 
   await recordTokenEvent({
     tenantId: tenant.id,
@@ -78,6 +100,19 @@ export async function createApprovalRequest(
     sourceIp: ctx.sourceIp.slice(0, 45),
     taskId,
   });
+  if (!rule) {
+    // Fire-and-forget after the insert committed: a slow or failing webhook never touches the token request.
+    void notifyApprovalPending(
+      tenant,
+      toDto({
+        approval: row,
+        applicationName: application.name,
+        clientId: application.clientId,
+        deciderName: null,
+        ruleScopeName: null,
+      }),
+    );
+  }
   return row.id;
 }
 
@@ -135,6 +170,7 @@ const dtoColumns = {
   applicationName: applications.name,
   clientId: applications.clientId,
   deciderName: adminUsers.name,
+  ruleScopeName: scopes.name,
 };
 
 type DtoRow = {
@@ -142,11 +178,21 @@ type DtoRow = {
   applicationName: string;
   clientId: string;
   deciderName: string | null;
+  ruleScopeName: string | null;
 };
 
-function toDto({ approval: a, applicationName, clientId, deciderName }: DtoRow): ApprovalDto {
+function toDto({
+  approval: a,
+  applicationName,
+  clientId,
+  deciderName,
+  ruleScopeName,
+}: DtoRow): ApprovalDto {
   let decidedBy: ApprovalDto["decidedBy"] = null;
   if (deciderName !== null) decidedBy = { kind: "user", label: deciderName };
+  else if (a.decidedByRuleId !== null)
+    decidedBy = { kind: "rule", label: `rule: ${ruleScopeName}` };
+  // shortcut: a deleted rule nulls decided_by_rule_id, so its rows then read as "API key"; keep a rule label column if that matters.
   // A decision with no user is the ADMIN_API_KEY actor (expiry never sets decided_at).
   else if (a.decidedAt !== null) decidedBy = { kind: "api-key", label: "API key" };
   return {
@@ -178,39 +224,54 @@ function selectDtos() {
         eq(applications.id, approvalRequests.applicationId),
       ),
     )
-    .leftJoin(adminUsers, eq(adminUsers.id, approvalRequests.decidedBy));
+    .leftJoin(adminUsers, eq(adminUsers.id, approvalRequests.decidedBy))
+    .leftJoin(
+      approvalRules,
+      and(
+        eq(approvalRules.tenantId, approvalRequests.tenantId),
+        eq(approvalRules.id, approvalRequests.decidedByRuleId),
+      ),
+    )
+    .leftJoin(
+      scopes,
+      and(eq(scopes.tenantId, approvalRules.tenantId), eq(scopes.id, approvalRules.scopeId)),
+    );
 }
 
 /** Queue counters; "today" is the trailing 24 h, like the Tokens page. */
 export async function getApprovalCounts(tenantId: string): Promise<ApprovalCountsDto> {
   const live = sql`${approvalRequests.status} = 'pending' and ${approvalRequests.expiresAt} > now()`;
   const decided24h = sql`${approvalRequests.decidedAt} >= now() - interval '24 hours'`;
-  const [row] = await db
-    .select({
-      pending: sql<number>`count(*) filter (where ${live})`.mapWith(Number),
-      oldestPendingAt: sql<
-        string | null
-      >`min(${approvalRequests.createdAt}) filter (where ${live})`,
-      approvedToday:
-        sql<number>`count(*) filter (where ${approvalRequests.status} = 'approved' and ${decided24h})`.mapWith(
-          Number,
-        ),
-      deniedToday:
-        sql<number>`count(*) filter (where ${approvalRequests.status} = 'denied' and ${decided24h})`.mapWith(
-          Number,
-        ),
-      medianWaitSeconds: sql<
-        number | null
-      >`percentile_cont(0.5) within group (order by extract(epoch from (${approvalRequests.decidedAt} - ${approvalRequests.createdAt}))) filter (where ${decided24h})`,
-    })
-    .from(approvalRequests)
-    .where(eq(approvalRequests.tenantId, tenantId));
+  const [[row], rules] = await Promise.all([
+    db
+      .select({
+        pending: sql<number>`count(*) filter (where ${live})`.mapWith(Number),
+        oldestPendingAt: sql<
+          string | null
+        >`min(${approvalRequests.createdAt}) filter (where ${live})`,
+        approvedToday:
+          sql<number>`count(*) filter (where ${approvalRequests.status} = 'approved' and ${decided24h})`.mapWith(
+            Number,
+          ),
+        deniedToday:
+          sql<number>`count(*) filter (where ${approvalRequests.status} = 'denied' and ${decided24h})`.mapWith(
+            Number,
+          ),
+        medianWaitSeconds: sql<
+          number | null
+        >`percentile_cont(0.5) within group (order by extract(epoch from (${approvalRequests.decidedAt} - ${approvalRequests.createdAt}))) filter (where ${decided24h})`,
+      })
+      .from(approvalRequests)
+      .where(eq(approvalRequests.tenantId, tenantId)),
+    countApprovalRules(tenantId),
+  ]);
   return {
     pending: row.pending,
     oldestPendingAt: row.oldestPendingAt ? new Date(row.oldestPendingAt).toISOString() : null,
     approvedToday: row.approvedToday,
     deniedToday: row.deniedToday,
     medianWaitSeconds: row.medianWaitSeconds === null ? null : Number(row.medianWaitSeconds),
+    rules,
   };
 }
 

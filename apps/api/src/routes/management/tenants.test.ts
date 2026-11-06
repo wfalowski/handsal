@@ -13,6 +13,7 @@ import { count, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { app } from "../../app.js";
+import { env } from "../../env.js";
 import { type AdminEnv, createAdminAuth, csrfProtection } from "../../middleware/admin-auth.js";
 import { errorHandler } from "../../middleware/error-handler.js";
 import {
@@ -24,6 +25,7 @@ import {
   truncateAll,
 } from "../../test/factories.js";
 import { jsonRequest, loginAs } from "../../test/helpers.js";
+import { decryptPrivateKey } from "../../utils/crypto.js";
 import { memberRoutes } from "./members.js";
 import { tenantRoutes } from "./tenants.js";
 
@@ -106,6 +108,81 @@ describe("externalIdp", () => {
 
     const cleared = await call(s, "PATCH", path, { externalIdp: null });
     expect((await cleared.json()).externalIdp).toBeNull();
+  });
+});
+
+describe("approval webhook", () => {
+  const SECRET = "whsec-0123456789abcdef";
+  const URL_ = "https://hooks.example.com/handsal";
+
+  it("PATCH sets url + secret (encrypted, never returned); null clears", async () => {
+    const t = await createTenant();
+    const s = await sessionFor({ tenantId: t.id, role: "admin" });
+    const path = `/api/tenants/${t.id}`;
+    const initial = await (await call(s, "GET", path)).json();
+    expect(initial).toMatchObject({ approvalWebhookUrl: null, approvalWebhookSecretSet: false });
+
+    const set = await call(s, "PATCH", path, {
+      approvalWebhookUrl: URL_,
+      approvalWebhookSecret: SECRET,
+    });
+    expect(set.status).toBe(200);
+    const text = await set.text();
+    expect(text).not.toContain(SECRET);
+    expect(JSON.parse(text)).toMatchObject({
+      approvalWebhookUrl: URL_,
+      approvalWebhookSecretSet: true,
+    });
+    const [row] = await db.select().from(tenants).where(eq(tenants.id, t.id));
+    expect(row.approvalWebhookSecretEnc).not.toContain(SECRET);
+    expect(decryptPrivateKey(row.approvalWebhookSecretEnc ?? "", env.KEY_ENCRYPTION_SECRET)).toBe(
+      SECRET,
+    );
+
+    // Omitted fields are left alone.
+    const renamed = await (await call(s, "PATCH", path, { name: "Renamed" })).json();
+    expect(renamed.approvalWebhookSecretSet).toBe(true);
+
+    const cleared = await call(s, "PATCH", path, {
+      approvalWebhookUrl: null,
+      approvalWebhookSecret: null,
+    });
+    expect(await cleared.json()).toMatchObject({
+      approvalWebhookUrl: null,
+      approvalWebhookSecretSet: false,
+    });
+  });
+
+  it("short secret and non-http(s) url → 400 validation_error", async () => {
+    const t = await createTenant();
+    const s = await sessionFor({ tenantId: t.id, role: "admin" });
+    const path = `/api/tenants/${t.id}`;
+    for (const body of [
+      { approvalWebhookSecret: "short" },
+      { approvalWebhookUrl: "ftp://hooks.example.com/x" },
+    ]) {
+      const res = await call(s, "PATCH", path, body);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("validation_error");
+    }
+  });
+
+  it("http webhook url rejected when NODE_ENV=production, allowed otherwise", async () => {
+    const t = await createTenant();
+    const path = `/api/tenants/${t.id}`;
+    const auth = { authorization: `Bearer ${API_KEY}` };
+    const body = { approvalWebhookUrl: "http://hooks.example.com/handsal" };
+    expect((await jsonRequest(apiKeyApp, "PATCH", path, body, auth)).status).toBe(200);
+    env.NODE_ENV = "production";
+    try {
+      const res = await jsonRequest(apiKeyApp, "PATCH", path, body, auth);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("validation_error");
+      const ok = await jsonRequest(apiKeyApp, "PATCH", path, { approvalWebhookUrl: URL_ }, auth);
+      expect(ok.status).toBe(200);
+    } finally {
+      env.NODE_ENV = "test";
+    }
   });
 });
 

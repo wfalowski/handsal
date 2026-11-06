@@ -188,6 +188,7 @@ describe("approvals management", () => {
       approvedToday: 1,
       deniedToday: 1,
       medianWaitSeconds: 90,
+      rules: 0,
     });
     expect(pending.nextCursor).toBeNull();
 

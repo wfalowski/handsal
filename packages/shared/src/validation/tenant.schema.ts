@@ -36,10 +36,9 @@ export const tenantDtoSchema = z.object({
   tokensNotBefore: z.iso.datetime().nullable(),
   issuer: z.string(),
   externalIdp: externalIdpSchema.nullable(),
-  // shortcut: both optional until the 6.5 API slice emits them; tighten (url nullable, secretSet required) then.
   // The secret itself is write-only and never in the DTO.
-  approvalWebhookUrl: z.string().nullable().optional(),
-  approvalWebhookSecretSet: z.boolean().optional(),
+  approvalWebhookUrl: z.string().nullable(),
+  approvalWebhookSecretSet: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
