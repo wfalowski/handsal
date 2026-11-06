@@ -33,6 +33,8 @@ export function RuntimeBinding({ tenantId, app, canEdit }: Props) {
       : list.length > AGENT_CIDRS_MAX
         ? `At most ${AGENT_CIDRS_MAX} ranges`
         : undefined;
+  const operatorError =
+    operator.trim() && !operator.includes("@") ? "Enter an email address" : undefined;
   const dirty = runtime !== saved.runtime || cidrs !== saved.cidrs || operator !== saved.operator;
 
   return (
@@ -44,7 +46,7 @@ export function RuntimeBinding({ tenantId, app, canEdit }: Props) {
         <Input
           label="Runtime"
           value={runtime}
-          maxLength={255}
+          maxLength={64}
           disabled={!canEdit}
           autoComplete="off"
           onChange={(e) => setRuntime(e.target.value)}
@@ -66,6 +68,7 @@ export function RuntimeBinding({ tenantId, app, canEdit }: Props) {
           maxLength={255}
           disabled={!canEdit}
           autoComplete="off"
+          error={operatorError}
           onChange={(e) => setOperator(e.target.value)}
         />
         {canEdit && (
@@ -84,7 +87,7 @@ export function RuntimeBinding({ tenantId, app, canEdit }: Props) {
             </Button>
             <Button
               size="sm"
-              disabled={!dirty || !!cidrError}
+              disabled={!dirty || !!cidrError || !!operatorError}
               loading={update.isPending}
               onClick={() =>
                 update.mutate(

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 import { relativeTime } from "../lib/format";
 import { useTasks } from "../lib/queries";
@@ -23,13 +24,15 @@ export function RecentTasks({
         <h2 id="recent-tasks" className="font-display font-semibold text-base">
           Recent tasks
         </h2>
-        <button
-          type="button"
-          onClick={() => onSelect(undefined)}
-          className="inline-flex h-11 items-center text-accent text-sm hover:underline"
-        >
-          View all
-        </button>
+        {tasks.data && tasks.data.length > 0 && (
+          <Link
+            to="/t/$tenantId/tokens"
+            params={{ tenantId }}
+            className="inline-flex h-11 items-center text-accent text-sm hover:underline"
+          >
+            View all
+          </Link>
+        )}
       </div>
       {tasks.isPending ? (
         <p className="p-2 text-muted text-sm">Loading…</p>
@@ -63,7 +66,9 @@ export function RecentTasks({
                   <span className="flex min-w-0 flex-1 flex-col">
                     <code className="truncate font-mono text-[13px]">{t.taskId}</code>
                     <span className="truncate text-muted text-xs">
-                      {t.actorSub ? `for ${t.actorSub}` : t.scopes.join(" · ")}
+                      {t.actorSub
+                        ? `${t.scopes.join(" ")} · for ${t.actorSub}`
+                        : t.scopes.join(" ")}
                     </span>
                   </span>
                   <span className="shrink-0 text-muted text-xs">{relativeTime(t.lastSeenAt)}</span>

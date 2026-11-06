@@ -175,6 +175,7 @@ export type ApplicationDetail = {
   issuer: string;
   tokenEndpoint: string;
   recentTokens: TokenEventDto[];
+  agentBudgetUsed: number | null;
 };
 export type ResourceWithScopes = ResourceDto & { scopes: ScopeDto[] };
 
@@ -201,6 +202,7 @@ export function useApplicationDetail(tenantId: string, appId: string) {
   return useQuery({
     queryKey: ["application", { tenantId, appId }],
     queryFn: () => api<ApplicationDetail>(`/api/tenants/${tenantId}/applications/${appId}`),
+    refetchInterval: (query) => (query.state.data?.application.kind === "agent" ? 5000 : false),
   });
 }
 

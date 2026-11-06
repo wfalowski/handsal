@@ -52,7 +52,7 @@ export function AuthMethodRadio({
   value: AuthMethod;
   onChange: (v: AuthMethod) => void;
   agent?: boolean;
-  /** private_key_jwt needs at least one active registered key (API: 400 no_application_key). */
+  /** private_key_jwt needs at least one active registered key (API: 409 no_application_key). */
   allowPrivateKey?: boolean;
   disabled?: boolean;
 }) {
@@ -155,7 +155,7 @@ function Form({
       {
         onSuccess: (res) => onCreated(res.application, res.clientSecret),
         onError: (err) => {
-          if (err instanceof ApiRequestError && err.status === 409) setTaken(true);
+          if (err instanceof ApiRequestError && err.code === "application_exists") setTaken(true);
           else toast.error(err.message);
         },
       },
@@ -180,8 +180,8 @@ function Form({
               checked={kind === v}
               onChange={() => {
                 setKind(v);
-                // Agents default to key-based auth and a 5-minute lease; both are editable.
-                setMethod(v === "agent" ? "private_key_jwt" : "client_secret_basic");
+                // Agents default to a 5-minute lease; keys can only be registered after creation.
+                setMethod("client_secret_basic");
                 setTtl(v === "agent" ? "300" : "");
               }}
             />
@@ -212,8 +212,13 @@ function Form({
         value={method}
         onChange={setMethod}
         agent={kind === "agent"}
-        allowPrivateKey={kind === "agent"}
+        allowPrivateKey={false}
       />
+      {kind === "agent" && (
+        <p className="-mt-2 text-muted text-xs">
+          Register a public key after creating the application to switch to private_key_jwt.
+        </p>
+      )}
       <div className="flex flex-col gap-1.5">
         <label htmlFor="new-app-ttl" className="font-medium text-[13px] text-body">
           Access token lifetime

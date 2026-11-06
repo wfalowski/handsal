@@ -11,6 +11,7 @@ import { Dialog } from "../components/Dialog";
 import { EmptyState } from "../components/EmptyState";
 import { GrantsMatrix } from "../components/GrantsMatrix";
 import { Input } from "../components/Input";
+import { RecentTasks } from "../components/RecentTasks";
 import { RegisteredKeys } from "../components/RegisteredKeys";
 import { RegisterKeyDialog } from "../components/RegisterKeyDialog";
 import { RotateSecretDialog } from "../components/RotateSecretDialog";
@@ -43,6 +44,7 @@ const DOT = {
 
 function ApplicationDetailPage() {
   const { tenantId, appId } = Route.useParams();
+  const navigate = useNavigate();
   const detail = useApplicationDetail(tenantId, appId);
   const tenantInfo = useTenant(tenantId);
   const grantsRes = useGrantsResources(tenantId);
@@ -73,8 +75,7 @@ function ApplicationDetailPage() {
   const { application: app, grants, tokenEndpoint, issuer, recentTokens } = detail.data;
   const canEdit = role !== "auditor";
   const isAgent = app.kind === "agent";
-  const agentBudgetUsed =
-    (detail.data as { agentBudgetUsed?: number | null }).agentBudgetUsed ?? null;
+  const { agentBudgetUsed } = detail.data;
 
   return (
     <div className="flex flex-col gap-6">
@@ -92,11 +93,16 @@ function ApplicationDetailPage() {
         <div className="flex min-w-0 flex-[2_1_480px] flex-col gap-6">
           <Credentials tenantId={tenantId} app={app} canEdit={canEdit} />
           {isAgent && (
-            <RuntimeBinding key={app.updatedAt} tenantId={tenantId} app={app} canEdit={canEdit} />
+            <RuntimeBinding
+              key={[app.agentRuntime, app.allowedCidrs?.join(), app.operatorEmail].join("|")}
+              tenantId={tenantId}
+              app={app}
+              canEdit={canEdit}
+            />
           )}
           {isAgent && (
             <AgentGuardrails
-              key={app.updatedAt}
+              key={[app.tokenTtlSeconds, app.maxScopesPerToken, app.tokenBudgetPerHour].join("|")}
               tenantId={tenantId}
               app={app}
               budgetUsed={agentBudgetUsed}
@@ -148,45 +154,55 @@ function ApplicationDetailPage() {
               <Fact label="Rate limit" value="600 tokens / min" last />
             </dl>
           </section>
-          <section className={CARD}>
-            <div className="flex items-center justify-between border-hover border-b p-4 pr-5 pl-5">
-              <h2 className="font-semibold text-[15px]">Recent tokens</h2>
-              <Link
-                to="/t/$tenantId/tokens"
-                params={{ tenantId }}
-                search={{ applicationId: appId }}
-                className="font-medium text-[13px] text-accent"
-              >
-                View all
-              </Link>
-            </div>
-            {recentTokens.length === 0 ? (
-              <p className="p-5 text-muted text-sm">No tokens yet.</p>
-            ) : (
-              <ul className="m-0 flex list-none flex-col pt-1.5 pr-5 pb-1.5 pl-5">
-                {recentTokens.map((t) => (
-                  <li
-                    key={t.id}
-                    className="flex items-center justify-between gap-3 border-hover border-b py-2.5 last:border-b-0"
-                  >
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <span
-                        role="img"
-                        aria-label={t.outcome}
-                        className={clsx("h-2 w-2 flex-none rounded-full", DOT[t.outcome])}
-                      />
-                      <span className="truncate font-mono text-body text-xs">
-                        {t.jti ? `${t.jti.slice(0, 12)}…` : t.reason}
+          {isAgent ? (
+            <RecentTasks
+              tenantId={tenantId}
+              applicationId={appId}
+              onSelect={(taskId) =>
+                navigate({ to: "/t/$tenantId/tokens", params: { tenantId }, search: { taskId } })
+              }
+            />
+          ) : (
+            <section className={CARD}>
+              <div className="flex items-center justify-between border-hover border-b p-4 pr-5 pl-5">
+                <h2 className="font-semibold text-[15px]">Recent tokens</h2>
+                <Link
+                  to="/t/$tenantId/tokens"
+                  params={{ tenantId }}
+                  search={{ applicationId: appId }}
+                  className="font-medium text-[13px] text-accent"
+                >
+                  View all
+                </Link>
+              </div>
+              {recentTokens.length === 0 ? (
+                <p className="p-5 text-muted text-sm">No tokens yet.</p>
+              ) : (
+                <ul className="m-0 flex list-none flex-col pt-1.5 pr-5 pb-1.5 pl-5">
+                  {recentTokens.map((t) => (
+                    <li
+                      key={t.id}
+                      className="flex items-center justify-between gap-3 border-hover border-b py-2.5 last:border-b-0"
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span
+                          role="img"
+                          aria-label={t.outcome}
+                          className={clsx("h-2 w-2 flex-none rounded-full", DOT[t.outcome])}
+                        />
+                        <span className="truncate font-mono text-body text-xs">
+                          {t.jti ? `${t.jti.slice(0, 12)}…` : t.reason}
+                        </span>
+                      </div>
+                      <span className="whitespace-nowrap text-muted text-xs">
+                        {relativeTime(t.createdAt)}
                       </span>
-                    </div>
-                    <span className="whitespace-nowrap text-muted text-xs">
-                      {relativeTime(t.createdAt)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
         </div>
       </div>
     </div>

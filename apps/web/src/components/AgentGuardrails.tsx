@@ -29,14 +29,17 @@ export function AgentGuardrails({ tenantId, app, budgetUsed, canEdit }: Props) {
   const toast = useToast();
   const update = useApplicationPatch(tenantId, app.id);
   const saved = {
-    ttl: String(app.tokenTtlSeconds ?? 300),
+    ttl: app.tokenTtlSeconds === null ? "" : String(app.tokenTtlSeconds),
     max: String(app.maxScopesPerToken ?? ""),
     budget: String(app.tokenBudgetPerHour ?? ""),
   };
   const [ttl, setTtl] = useState(saved.ttl);
   const [max, setMax] = useState(saved.max);
   const [budget, setBudget] = useState(saved.budget);
-  const dirty = ttl !== saved.ttl || max !== saved.max || budget !== saved.budget;
+  const ttlDirty = ttl !== saved.ttl;
+  const maxDirty = max !== saved.max;
+  const budgetDirty = budget !== saved.budget;
+  const dirty = ttlDirty || maxDirty || budgetDirty;
   const maxN = toNum(max);
   const budgetN = toNum(budget);
   const maxError = rangeError(maxN, AGENT_MAX_SCOPES_MIN, AGENT_MAX_SCOPES_MAX);
@@ -46,9 +49,10 @@ export function AgentGuardrails({ tenantId, app, budgetUsed, canEdit }: Props) {
       ? Math.min(100, Math.round((budgetUsed / app.tokenBudgetPerHour) * 100))
       : null;
   // Show a non-preset saved TTL instead of silently changing it.
-  const ttlOpts: number[] = AGENT_TTL_OPTIONS.some((o) => String(o) === ttl)
-    ? [...AGENT_TTL_OPTIONS]
-    : [...AGENT_TTL_OPTIONS, Number(ttl)];
+  const ttlOpts: number[] =
+    AGENT_TTL_OPTIONS.some((o) => String(o) === ttl) || ttl === ""
+      ? [...AGENT_TTL_OPTIONS]
+      : [...AGENT_TTL_OPTIONS, Number(ttl)];
 
   return (
     <section className="rounded-[14px] border border-line bg-white">
@@ -71,6 +75,7 @@ export function AgentGuardrails({ tenantId, app, budgetUsed, canEdit }: Props) {
             className={SELECT_CLASS}
             aria-describedby="agent-ttl-hint"
           >
+            <option value="">Inherit default</option>
             {ttlOpts.map((o) => (
               <option key={o} value={o}>
                 {TTL_LABEL[o] ?? `${o} s`}
@@ -101,6 +106,7 @@ export function AgentGuardrails({ tenantId, app, budgetUsed, canEdit }: Props) {
             value={budget}
             disabled={!canEdit}
             error={budgetError}
+            aria-describedby={pct !== null ? "agent-budget-used" : undefined}
             onChange={(e) => setBudget(e.target.value)}
           />
           {pct !== null && (
@@ -115,7 +121,7 @@ export function AgentGuardrails({ tenantId, app, budgetUsed, canEdit }: Props) {
               >
                 <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
               </div>
-              <p className="text-muted text-xs">
+              <p id="agent-budget-used" className="text-muted text-xs">
                 Used this hour: {budgetUsed} of {app.tokenBudgetPerHour}
               </p>
             </>
@@ -142,9 +148,9 @@ export function AgentGuardrails({ tenantId, app, budgetUsed, canEdit }: Props) {
               onClick={() =>
                 update.mutate(
                   {
-                    tokenTtlSeconds: Number(ttl),
-                    maxScopesPerToken: maxN,
-                    tokenBudgetPerHour: budgetN,
+                    ...(ttlDirty && { tokenTtlSeconds: toNum(ttl) }),
+                    ...(maxDirty && { maxScopesPerToken: maxN }),
+                    ...(budgetDirty && { tokenBudgetPerHour: budgetN }),
                   },
                   {
                     onSuccess: () => toast.success("Guardrails saved"),
