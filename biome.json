@@ -15,6 +15,7 @@
       "!node_modules",
       "!docs",
       "!.claude",
+      "!**/routeTree.gen.ts",
       "!dist",
       "!**/drizzle",
       "!coverage",
