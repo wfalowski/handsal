@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:subagent-driven-development` (one fresh `developer` agent per task, `code-reviewer` after each behaviour-changing task, `verifier` on the combined result). Each task below is a self-contained brief: copy it verbatim into the agent prompt together with the **Global Constraints** and **Conventions** sections. Steps use `- [ ]` for tracking.
 
-**Status (2026-11-06):** Phases 0–5 (all 23 MVP tasks) implemented and merged to `main`; Phase 1–4 code reviews applied. Remaining work is Phase 6 (agents) and the backlog below.
+**Status (2026-11-06):** Phases 0–6 implemented and merged to `main`: all 23 MVP tasks plus Phase 6 (6.1–6.6, design note `docs/agents.md`, migrations 0002–0006); code reviews for Phases 1–4 and 6.1–6.5 applied. Remaining work is the backlog below.
 
 **Goal:** An open-source, self-hostable, multi-tenant machine-to-machine OAuth 2.0 authorization server (client-credentials grant, ES256 JWTs, introspection, revocation, JWKS, per-tenant issuers) with an admin UI, shipped as **one Docker image** plus a production `docker-compose` with PostgreSQL.
 
@@ -362,7 +362,7 @@ Visual spec = `docs/design/<Board>.dc.html` (open the file, read the markup + th
 
 ---
 
-## Phase 6 — Post-MVP: AI agents (artboards 08–09) — do not start before Phase 5 is green
+## Phase 6 — Post-MVP: AI agents (artboards 08–09) — DONE (status: all six tasks merged; deviations listed in `docs/agents.md` → Implementation deviations; auto-approve rules are API-only, no UI)
 
 Each task gets its own migration (`00NN_*.sql`) and a short design note in `docs/agents.md` before implementation (`deep-reasoner` writes the note; `developer` Opus implements).
 
@@ -376,7 +376,7 @@ Each task gets its own migration (`00NN_*.sql`) and a short design note in `docs
 ### Non-agent backlog (unscheduled)
 
 Opaque tokens (introspection-only format) · custom issuer domains per tenant · admin SSO (OIDC) · password reset · Redis store for rate limits (multi-replica) · CSV export of token events · "Introspect a token" admin tool · p95 latency tile · audit log of admin actions · enterprise license + feature flags.
-admin password reset / "reset temporary password" route (re-inviting an existing user returns no password) · `CREATE INDEX CONCURRENTLY` migrations once tables grow · `unsupported_token_type` for unknown `token_type_hint` on revoke
+approval-rules editor in the admin UI · unique index on `approval_rules (tenant_id, scope_id, condition)` · resolve-and-pin outbound URLs (webhook/JWKS) against DNS rebinding · redeem guardrails: pending cap is check-then-insert (can overshoot under concurrency) · admin password reset / "reset temporary password" route (re-inviting an existing user returns no password) · `CREATE INDEX CONCURRENTLY` migrations once tables grow · `unsupported_token_type` for unknown `token_type_hint` on revoke
 
 ---
 
