@@ -238,6 +238,7 @@ Done already: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `biome.json`,
 - `revokeAllTenantTokens(tenantId)` (sets `tenants.tokens_not_before`), `purgeExpiredRevocations(): Promise<number>` (hourly job).
 - Routes: both require client authentication (`authenticateClient`, form-encoded, rate limits introspect 1200 IP / 600 client, revoke 200 / 100). `POST /t/:slug/oauth/introspect` returns 200 always for authenticated callers (`{active:false}` on any token problem); when `tenant.introspection_enabled === false` → 404 `{error:"invalid_request", error_description:"introspection disabled"}`. `POST /t/:slug/oauth/revoke` → 200 empty body.
 
+- [ ] Migration `0001_*`: add index `idx_revoked_tokens_tenant_id` on `revoked_tokens(tenant_id)` (tenant delete and `revokeAllTenantTokens` cleanup otherwise seq-scan). Edit the schema file, `pnpm db:generate`, never hand-edit SQL.
 - [ ] Tests: issued token → active with all fields; after `revokeToken` → inactive; token from app A revoked by app B → still active, 200; after `revokeAllApplicationTokens` tokens issued before are inactive and tokens issued after are active; tenant `revoke-all` same; disabled app → inactive; paused tenant → inactive (Review Focus 5); token signed by a *retiring* key → active; garbage token → `{active:false}`; introspection disabled → 404; unauthenticated → 401.
 
 ### Task 2.5 — Discovery + JWKS routes  (Sonnet)
@@ -339,6 +340,7 @@ Visual spec = `docs/design/<Board>.dc.html` (open the file, read the markup + th
 ### Task 5.1 — Single-image build + production compose smoke  (Sonnet)
 
 - [ ] `docker build -t handsal:local .` from a clean clone succeeds; image runs with `.env.example` values + `POSTGRES_PASSWORD` via `docker compose -f docker-compose.prod.yml up` (use `build: .`), `GET /health` 200, `GET /ready` 200, SPA served at `/`, migrations applied, bootstrap admin created from `BOOTSTRAP_ADMIN_*`.
+- [ ] `runMigrations()` takes a Postgres advisory lock (`pg_advisory_lock(<constant>)`) so two replicas starting together do not race on `CREATE TYPE`; and `server.ts` starts the HTTP listener (with `/ready` returning 503 `migrating`) **before** running migrations so orchestrators do not kill the container mid-DDL.
 - [ ] Add `HEALTHCHECK` to the Dockerfile (`node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1))"`), run as non-root `node` user, image size noted in `docs/deployment.md`.
 
 ### Task 5.2 — CI hardening  (Sonnet)
