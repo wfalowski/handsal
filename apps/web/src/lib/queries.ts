@@ -1,8 +1,11 @@
 import type {
   ApplicationDto,
+  MemberDto,
   ResourceDto,
   ScopeDto,
+  SigningKeyDto,
   TenantDto,
+  TenantRole,
   TokenEventDto,
   TokenStatsDto,
 } from "@handsal/shared";
@@ -394,4 +397,133 @@ export function useDeleteScope(tenantId: string, resourceId: string) {
       method: "DELETE",
     }),
   );
+}
+
+// --- settings (Task 4.5)
+export type TenantDetail = TenantDto & {
+  discoveryUrl: string;
+  jwksUrl: string;
+  role: TenantRole;
+};
+
+export type TenantPatch = {
+  name?: string;
+  defaultTokenTtlSeconds?: number;
+  introspectionEnabled?: boolean;
+  keyRotationDays?: number | null;
+};
+
+export function useTenant(tenantId: string) {
+  return useQuery({
+    queryKey: ["tenant", { tenantId }],
+    queryFn: () => api<TenantDetail>(`/api/tenants/${tenantId}`),
+  });
+}
+
+/** Tenant-level mutations change /me (names, sidebar) and the tenants list too. */
+function useInvalidateTenant(tenantId: string) {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all(
+      [["tenant", { tenantId }], ["me"], ["tenants"]].map((queryKey) =>
+        queryClient.invalidateQueries({ queryKey }),
+      ),
+    );
+}
+
+export function useUpdateTenant(tenantId: string) {
+  const invalidate = useInvalidateTenant(tenantId);
+  return useMutation({
+    mutationFn: (patch: TenantPatch) =>
+      api<TenantDto>(`/api/tenants/${tenantId}`, { method: "PATCH", body: patch }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useTenantAction(
+  tenantId: string,
+  action: "pause" | "resume" | "revoke-all-tokens",
+) {
+  const invalidate = useInvalidateTenant(tenantId);
+  return useMutation({
+    mutationFn: () => api<unknown>(`/api/tenants/${tenantId}/${action}`, { method: "POST" }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteTenant(tenantId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (confirmSlug: string) =>
+      api<void>(`/api/tenants/${tenantId}`, { method: "DELETE", body: { confirmSlug } }),
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: ["tenant", { tenantId }] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["me"] }),
+        queryClient.invalidateQueries({ queryKey: ["tenants"] }),
+      ]);
+    },
+  });
+}
+
+export function useSigningKeys(tenantId: string) {
+  return useQuery({
+    queryKey: ["signing-keys", { tenantId }],
+    queryFn: async () =>
+      (await api<{ items: SigningKeyDto[] }>(`/api/tenants/${tenantId}/signing-keys`)).items,
+  });
+}
+
+export function useRotateKey(tenantId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<SigningKeyDto>(`/api/tenants/${tenantId}/signing-keys/rotate`, { method: "POST" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["signing-keys", { tenantId }] }),
+  });
+}
+
+export function useMembers(tenantId: string) {
+  return useQuery({
+    queryKey: ["members", { tenantId }],
+    queryFn: () => api<MemberDto[]>(`/api/tenants/${tenantId}/members`),
+  });
+}
+
+function useInvalidateMembers(tenantId: string) {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: ["members", { tenantId }] });
+}
+
+export function useAddMember(tenantId: string) {
+  const invalidate = useInvalidateMembers(tenantId);
+  return useMutation({
+    mutationFn: (input: { email: string; name?: string; role: TenantRole }) =>
+      api<{ member: MemberDto; temporaryPassword?: string }>(`/api/tenants/${tenantId}/members`, {
+        method: "POST",
+        body: input,
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateMemberRole(tenantId: string) {
+  const invalidate = useInvalidateMembers(tenantId);
+  return useMutation({
+    mutationFn: (input: { adminUserId: string; role: TenantRole }) =>
+      api<MemberDto>(`/api/tenants/${tenantId}/members/${input.adminUserId}`, {
+        method: "PATCH",
+        body: { role: input.role },
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRemoveMember(tenantId: string) {
+  const invalidate = useInvalidateMembers(tenantId);
+  return useMutation({
+    mutationFn: (adminUserId: string) =>
+      api<void>(`/api/tenants/${tenantId}/members/${adminUserId}`, { method: "DELETE" }),
+    onSuccess: invalidate,
+  });
 }
