@@ -680,7 +680,7 @@ export function useDecideApproval(tenantId: string) {
       api<ApprovalDto>(`/api/tenants/${tenantId}/approvals/${v.id}/${v.action}`, {
         method: "POST",
       }),
-    onSuccess: () =>
+    onSettled: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: ["approvals", { tenantId }] }),
         queryClient.invalidateQueries({ queryKey: ["approval-counts", { tenantId }] }),

@@ -13,7 +13,7 @@ export function relativeTime(iso: string): string {
   for (const [unit, size] of UNITS) {
     if (abs >= size) return rtf.format(Math.trunc(seconds / size), unit);
   }
-  return "just now";
+  return seconds > 0 ? "in <1 min" : "just now";
 }
 
 export function compactNumber(n: number): string {

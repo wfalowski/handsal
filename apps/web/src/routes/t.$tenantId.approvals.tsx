@@ -107,12 +107,14 @@ function ApprovalsPage() {
               key={t.id}
               type="button"
               role="tab"
+              id={`approvals-tab-${t.id}`}
+              aria-controls="approvals-panel"
               aria-selected={tab === t.id}
               onClick={() =>
                 navigate({ search: { tab: t.id === "pending" ? undefined : t.id }, replace: true })
               }
               className={clsx(
-                "h-9 rounded-[7px] pr-4 pl-4 font-medium text-[13px]",
+                "h-11 rounded-[7px] pr-4 pl-4 font-medium text-[13px] md:h-9",
                 tab === t.id ? "bg-ink text-white" : "text-body hover:bg-hover",
               )}
             >
@@ -125,54 +127,56 @@ function ApprovalsPage() {
         </p>
       </div>
 
-      {list.isPending ? (
-        <p className="text-muted">Loading…</p>
-      ) : list.isError ? (
-        <EmptyState title="Couldn't load approvals" description={list.error.message} />
-      ) : items.length === 0 ? (
-        tab === "pending" ? (
-          <EmptyState
-            title="Queue is clear"
-            description="New requests for marked scopes will appear here."
-          />
-        ) : (
-          <EmptyState
-            title="Nothing resolved yet"
-            description="Decided requests will appear here."
-          />
-        )
-      ) : (
-        <>
-          {tab === "pending" ? (
-            <div className="flex flex-col gap-4">
-              {items.map((a) => (
-                <ApprovalCard
-                  key={a.id}
-                  tenantId={tenantId}
-                  approval={a}
-                  canDecide={canDecide}
-                  busy={decide.isPending}
-                  onApprove={() => run(a, "approve")}
-                  onDeny={() => setDenying(a)}
-                />
-              ))}
-            </div>
+      <div role="tabpanel" id="approvals-panel" aria-labelledby={`approvals-tab-${tab}`}>
+        {list.isPending ? (
+          <p className="text-muted">Loading…</p>
+        ) : list.isError ? (
+          <EmptyState title="Couldn't load approvals" description={list.error.message} />
+        ) : items.length === 0 ? (
+          tab === "pending" ? (
+            <EmptyState
+              title="Queue is clear"
+              description="New requests for marked scopes will appear here."
+            />
           ) : (
-            <ResolvedApprovalsTable approvals={items} />
-          )}
-          {list.hasNextPage && (
-            <div className="flex justify-center">
-              <Button
-                variant="secondary"
-                loading={list.isFetchingNextPage}
-                onClick={() => list.fetchNextPage()}
-              >
-                Load more
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+            <EmptyState
+              title="Nothing resolved yet"
+              description="Decided requests will appear here."
+            />
+          )
+        ) : (
+          <>
+            {tab === "pending" ? (
+              <div className="flex flex-col gap-4">
+                {items.map((a) => (
+                  <ApprovalCard
+                    key={a.id}
+                    tenantId={tenantId}
+                    approval={a}
+                    canDecide={canDecide}
+                    busy={decide.isPending && decide.variables?.id === a.id}
+                    onApprove={() => run(a, "approve")}
+                    onDeny={() => setDenying(a)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <ResolvedApprovalsTable approvals={items} />
+            )}
+            {list.hasNextPage && (
+              <div className="flex justify-center">
+                <Button
+                  variant="secondary"
+                  loading={list.isFetchingNextPage}
+                  onClick={() => list.fetchNextPage()}
+                >
+                  Load more
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       <ConfirmDialog
         open={!!denying}
