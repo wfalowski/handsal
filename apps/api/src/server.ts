@@ -1,5 +1,5 @@
 import { serve } from "@hono/node-server";
-import { app } from "./app.js";
+import { createApp, createReadiness } from "./app.js";
 import { env } from "./env.js";
 import { startJobs, stopJobs } from "./jobs/index.js";
 import { bootstrapAdmin } from "./services/bootstrap.js";
@@ -80,6 +80,14 @@ async function main() {
   const dbModule = await import("@handsal/db");
   dbPool = dbModule.pool;
 
+  // Listen first: /health answers and /ready reports 503 "migrating" while DDL
+  // runs, so orchestrators don't kill the container mid-migration.
+  const readiness = createReadiness();
+  const app = createApp({ readinessCheck: readiness.check });
+  server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
+    logger.info({ port: info.port }, "Server started");
+  });
+
   logger.info("Running database migrations...");
   await dbModule.runMigrations();
   logger.info("Migrations complete");
@@ -88,9 +96,8 @@ async function main() {
 
   startJobs();
 
-  server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
-    logger.info({ port: info.port }, "Server started");
-  });
+  readiness.markReady();
+  logger.info("Ready");
 }
 
 main().catch((err) => {

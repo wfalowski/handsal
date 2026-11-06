@@ -4,7 +4,28 @@ Handsal runs as one container (API, admin UI and background jobs in a single Nod
 
 ## Image
 
-<!-- written by Task 5.1 -->
+One image (`Dockerfile`, `node:24-bookworm-slim`) serves the OAuth endpoints, the
+management API and the admin SPA on port 3000.
+
+- **Size:** ~460 MB on disk (~96 MB compressed content), measured with
+  `docker image ls handsal:local`.
+- **User:** runs as the unprivileged `node` user. The compiled app is owned by
+  `node`; `node_modules` stays root-owned, so the app can't modify it.
+- **Healthcheck:** `HEALTHCHECK` polls `GET http://localhost:3000/health` every 30 s
+  (3 s timeout, 20 s start period, 3 retries). It assumes the default `PORT=3000`.
+- **Startup order:**
+  1. The HTTP listener starts. `/health` returns 200 straight away and stays 200.
+     `/ready` returns 503 `{"status":"migrating"}`.
+  2. Migrations run under a Postgres advisory lock (`pg_advisory_lock(7264181)`),
+     so several replicas starting at once apply them one after another.
+  3. The bootstrap super-admin is created from `BOOTSTRAP_ADMIN_*` if `admin_users`
+     is empty.
+  4. Background jobs start.
+  5. `/ready` switches to a real `select 1` check: 200 `ok`, or 503 `db_unavailable`.
+
+  If migrations fail, the process logs a fatal error and exits with code 1, and the
+  orchestrator restarts it. Point liveness probes at `/health` and readiness probes
+  (or load-balancer checks) at `/ready`.
 
 ## Secrets
 

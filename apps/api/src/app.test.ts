@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createApp } from "./app.js";
+import { createApp, createReadiness } from "./app.js";
 import { formRequest } from "./test/helpers.js";
 
 const app = createApp({ readinessCheck: async () => {} });
@@ -27,6 +27,25 @@ describe("app", () => {
     const res = await down.request("/ready");
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ status: "db_unavailable" });
+  });
+
+  it("GET /ready returns 503 migrating until markReady, then runs the real check", async () => {
+    let realChecks = 0;
+    const readiness = createReadiness(async () => {
+      realChecks++;
+    });
+    const gated = createApp({ readinessCheck: readiness.check });
+
+    const before = await gated.request("/ready");
+    expect(before.status).toBe(503);
+    expect(await before.json()).toEqual({ status: "migrating" });
+    expect((await gated.request("/health")).status).toBe(200);
+    expect(realChecks).toBe(0);
+
+    readiness.markReady();
+    const after = await gated.request("/ready");
+    expect(after.status).toBe(200);
+    expect(realChecks).toBe(1);
   });
 
   it("sets security headers and a strict API CSP", async () => {

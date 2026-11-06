@@ -42,6 +42,26 @@ async function defaultReadinessCheck(): Promise<void> {
   await pool.query("select 1");
 }
 
+/** Thrown by a readiness check that is not ready yet; `message` becomes the 503 `status`. */
+export class NotReadyError extends Error {}
+
+/**
+ * Startup readiness gate: `check` reports 503 `migrating` until `markReady()` is
+ * called, then delegates to `realCheck` (the `select 1` by default).
+ */
+export function createReadiness(realCheck: () => Promise<void> = defaultReadinessCheck) {
+  let ready = false;
+  return {
+    check: async () => {
+      if (!ready) throw new NotReadyError("migrating");
+      await realCheck();
+    },
+    markReady: () => {
+      ready = true;
+    },
+  };
+}
+
 export function createApp({
   readinessCheck = defaultReadinessCheck,
   serveSpa = env.NODE_ENV === "production",
@@ -99,6 +119,7 @@ export function createApp({
       await readinessCheck();
       return c.json({ status: "ok" });
     } catch (err) {
+      if (err instanceof NotReadyError) return c.json({ status: err.message }, 503);
       logger.warn({ err, requestId: c.var.requestId }, "Readiness check failed");
       return c.json({ status: "db_unavailable" }, 503);
     }

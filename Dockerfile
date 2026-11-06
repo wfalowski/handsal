@@ -37,7 +37,13 @@ RUN sed -i 's|"./src/index.ts"|"./dist/index.js"|g' packages/db/package.json
 # ── Stage 4: Production ─────────────────────────────────────
 FROM base AS production
 
+# OCI metadata. No license has been chosen yet, hence UNLICENSED.
+LABEL org.opencontainers.image.source="https://github.com/OWNER/handsal" \
+      org.opencontainers.image.description="Handsal: multi-tenant M2M OAuth 2.0 authorization server" \
+      org.opencontainers.image.licenses="UNLICENSED"
+
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--enable-source-maps
 
 # Copy workspace structure for prod install
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
@@ -50,18 +56,24 @@ COPY apps/web/package.json ./apps/web/
 RUN pnpm install --frozen-lockfile --prod
 
 # Copy compiled packages
-COPY --from=build /app/packages/shared/dist ./packages/shared/dist
-COPY --from=build /app/packages/db/dist ./packages/db/dist
+COPY --chown=node:node --from=build /app/packages/shared/dist ./packages/shared/dist
+COPY --chown=node:node --from=build /app/packages/db/dist ./packages/db/dist
 
 # Copy drizzle migration files (needed at runtime for programmatic migrations)
-COPY --from=build /app/packages/db/drizzle ./packages/db/drizzle
+COPY --chown=node:node --from=build /app/packages/db/drizzle ./packages/db/drizzle
 
 # Copy compiled API + static frontend
-COPY --from=build /app/apps/api/dist ./apps/api/dist
-COPY --from=build /app/apps/api/public ./apps/api/public
+COPY --chown=node:node --from=build /app/apps/api/dist ./apps/api/dist
+COPY --chown=node:node --from=build /app/apps/api/public ./apps/api/public
 
 WORKDIR /app/apps/api
 
+# Run unprivileged; node_modules stay root-owned (read-only for the app).
+USER node
+
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "dist/index.js"]
