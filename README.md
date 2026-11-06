@@ -12,14 +12,12 @@ Handsal is a self-hostable, multi-tenant machine-to-machine OAuth 2.0 authorizat
 - Client secret rotation with an overlap window (default 24 h).
 - `private_key_jwt` client authentication (RFC 7523, ES256 / P-256 public keys per application, key rotation with a grace period), see the [integration guide](docs/integration.md#5-authenticating-with-private_key_jwt).
 - AI-agent applications (`kind: agent`) with guardrails (allowed source CIDRs, scope ceiling per token, hourly token budget) and per-task activity in the token log, see [AI agent applications](docs/integration.md#6-ai-agent-applications).
+- Human approval for agent scopes (`agent_policy = approval`): the agent polls with `authorization_pending` until an admin approves or denies, see [Human approval](docs/integration.md#7-human-approval-for-agent-scopes).
+- Auto-approve rules for known-safe requests and a per-tenant approval webhook (HMAC-signed, Slack-compatible).
+- Token exchange (RFC 8693) with the `act` claim for delegation: agents act for users (external IdP) or services, see [Delegation](docs/integration.md#8-delegation-token-exchange).
 - Admin UI (tenants, applications, resources and scopes, token log, settings) and a management API (session cookie or `ADMIN_API_KEY`).
 - Token log with configurable retention, security events as structured JSON logs, in-memory rate limits.
 - Headless mode (`ENABLE_ADMIN_PANEL=false`) for a pure issuer.
-
-## Coming next (agents)
-
-- Human approval for sensitive scopes (`agent_policy = approval`).
-- Token exchange (RFC 8693) with the `act` claim for delegation.
 
 ## Quickstart (5 minutes)
 

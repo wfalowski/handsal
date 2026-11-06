@@ -338,3 +338,143 @@ An application of `kind: "agent"` represents an AI agent or other automated acto
 `Retry-After` is the number of seconds until the oldest counted token leaves the window (1 to 3600). The budget response has no `X-RateLimit-*` headers, unlike the rate limiter; handle both 429s by waiting for `Retry-After`. The budget is read just before issuing, so concurrent requests can overshoot it slightly. The CIDR check uses the client IP Handsal derives from the connection or `X-Forwarded-For`; behind a proxy see [deployment](deployment.md#reverse-proxies-and-agent-cidr-rules).
 
 **Scope policy.** A scope with `agent_policy=never` cannot be in an agent's token. Requesting it, or omitting `scope` while it is granted, returns `400 invalid_scope` (`Requested scope is not available to agents`). Other policies do not change this path.
+
+## 7. Human approval for agent scopes
+
+A scope with `agent_policy = approval` is one an `agent` application may only use after a person said yes. Set the policy on the scope (UI, or `agentPolicy` in the [management API](api.md#resources-and-scopes)) and grant the scope to the agent as usual. Services are not affected; `never` scopes stay unavailable to agents.
+
+**1. Request.** The agent asks for the scope exactly as for any token. Optional `actor_hint` (who the agent works for) and `justification` (why) are shown to the approver:
+
+```bash
+curl -s https://auth.example.com/t/acme/oauth/token \
+  -u "$CLIENT_ID:$CLIENT_SECRET" \
+  -d grant_type=client_credentials \
+  -d resource=https://api.acme.example/orders \
+  -d scope=orders:refund \
+  -d task_id=refund-4411 \
+  -d actor_hint="jane@acme.example" \
+  --data-urlencode "justification=Customer asked for a refund of order 4411"
+```
+
+No token is issued. The answer is `400`:
+
+```json
+{"error":"authorization_pending","error_description":"Waiting for human approval of one or more requested scopes","approval_id":"6f1c2c1e-6c1b-4a54-9d0e-3f6f6a0c9b11","interval":5}
+```
+
+A request that mixes `auto` and `approval` scopes waits as a whole. Repeating the same request returns the same `approval_id` instead of a second card.
+
+**2. Poll.** With the `approval_id`, no more often than every `interval` seconds, using the same client authentication. The poll takes no `resource`, `scope` or `task_id` (`400 invalid_request`):
+
+```bash
+curl -s https://auth.example.com/t/acme/oauth/token \
+  -u "$CLIENT_ID:$CLIENT_SECRET" \
+  -d grant_type=urn:handsal:params:grant-type:approval \
+  -d approval_id=6f1c2c1e-6c1b-4a54-9d0e-3f6f6a0c9b11
+```
+
+`authorization_pending` means keep waiting. `access_denied` means a person denied it; `expired_token` means nobody decided within 30 minutes. Stop in both cases and start a new request if the agent still needs the access. `invalid_grant` means the id is unknown, was already redeemed, or the grant changed meanwhile. On approval the answer is a normal `200` token response for the approved audience and scopes. It lives 300 seconds and an approval can be redeemed only once, so a new action needs a new request. Redemption checks the agent's guardrails (CIDR, scope ceiling, hourly budget) again.
+
+**What the approver sees.** The tenant's Approvals page lists pending requests as cards: application and client ID, audience, the scopes, `actor_hint`, `task_id`, `justification` and the time left until expiry, with Approve and Deny buttons; above them the counts (pending, oldest, approved and denied in the last 24 h, median wait); below, the history of resolved requests with who or which rule decided. `admin` and `owner` can decide, `auditor` can only read. The same is available over the API (`GET .../approvals`, `POST .../approvals/:id/approve|deny`).
+
+### Auto-approve rules
+
+A rule lets a known-safe pattern skip the human. It is tied to one `approval` scope and has an optional condition (all keys ANDed): `application_ids`, `task_id_prefix`, `max_scopes`. A request is auto-approved only when every `approval` scope in it is covered by a matching rule. Rules are managed through the API only:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+  -d '{"scopeId":"'$SCOPE_ID'","condition":{"task_id_prefix":"refund-","max_scopes":2}}' \
+  https://auth.example.com/api/tenants/$TENANT_ID/approval-rules
+```
+
+The agent flow does not change: the first request still answers `authorization_pending`, but with `interval: 0`, and the first poll returns the token. Auto-approved requests send no webhook and show in the history as decided by the rule. Delete a rule with `DELETE .../approval-rules/$RULE_ID`.
+
+### Webhook notifications
+
+Set `approvalWebhookUrl` (https; `http` is accepted outside production) and optionally `approvalWebhookSecret` (16 to 255 characters) on the tenant, in Settings or with `PATCH /api/tenants/$TENANT_ID`. Every new pending approval is POSTed there once, without blocking the agent. Delivery has a 5 s timeout, one retry after 2 s on a network error or `5xx`, none on `4xx`, and redirects are not followed. It is a notification, not a queue: the Approvals page is the source of truth.
+
+Headers: `Content-Type: application/json`, `X-Handsal-Event: approval.pending` and, when a secret is set, `X-Handsal-Signature: sha256=<hex>`, the HMAC-SHA256 of the raw body keyed with the secret. Body:
+
+```json
+{
+  "type": "approval.pending",
+  "approval": {
+    "id": "6f1c2c1e-6c1b-4a54-9d0e-3f6f6a0c9b11", "applicationId": "...", "applicationName": "Refund bot",
+    "clientId": "app_x7k2...", "audience": "https://api.acme.example/orders", "scopes": ["orders:refund"],
+    "actorHint": "jane@acme.example", "taskId": "refund-4411", "justification": "Customer asked for a refund of order 4411",
+    "status": "pending", "expiresAt": "2026-11-06T12:30:00.000Z", "createdAt": "2026-11-06T12:00:00.000Z",
+    "decidedAt": null, "decidedBy": null
+  },
+  "tenant": { "id": "...", "slug": "acme" },
+  "links": { "approvals": "https://auth.example.com/t/<tenantId>/approvals" }
+}
+```
+
+Verify the signature over the raw bytes, before parsing the JSON:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(rawBody, header, secret) {
+  const expected = Buffer.from(`sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`);
+  const got = Buffer.from(header ?? "");
+  return got.length === expected.length && timingSafeEqual(got, expected);
+}
+```
+
+**Slack.** If the URL's host ends in `hooks.slack.com`, Handsal sends the `{"text": ...}` body that Slack incoming webhooks require, for example `Approval needed: Refund bot wants orders:refund on https://api.acme.example/orders (task refund-4411). Review: <https://auth.example.com/t/<tenantId>/approvals|Approvals>`. Create an incoming webhook in Slack and paste its URL; a secret has no use there because Slack does not verify signatures.
+
+## 8. Delegation (token exchange)
+
+When an agent acts on behalf of someone, the resource server should see both who the request is for (`sub`) and which agent performs it (`act`). The agent sends the credential of that someone (the subject token) to the token endpoint and gets back an access token for the target API (RFC 8693).
+
+**Enable it** per agent application with `mayActFor` (UI, or the [management API](api.md#applications)), choosing whose tokens the agent may exchange:
+
+| `mayActFor` | Subject tokens accepted |
+|---|---|
+| `users` | JWTs of the tenant's external IdP (your login provider), see below |
+| `services` | Handsal access tokens issued to `service` applications of this tenant |
+| `tenant` | Any Handsal access token of this tenant, agents included; a token that already has an `act` keeps it, nested under the new one |
+
+An empty list (the default) disables exchange for the application. The application also needs a grant on the target `resource`.
+
+**Scopes.** `delegationScopeMode` decides what the new token may carry. `intersection` (default): only scopes that the agent is granted on the target resource and that the subject token itself carries (`scope` string or `scp` array), so the agent never does more than the subject. `agent_only`: the agent's grants, whatever the subject had; use it when the subject token comes from an IdP that knows nothing about your API's scopes. A `scope` parameter can narrow the result further. Scopes with `agent_policy` `never` or `approval` are refused in an exchange (`invalid_scope`); for `approval` the agent requests them with a normal request and the [approval flow](#7-human-approval-for-agent-scopes). Guardrails apply as always.
+
+**External IdP.** To accept user tokens, set the tenant's `externalIdp` (Settings, or `PATCH /api/tenants/$TENANT_ID`):
+
+```bash
+curl -s -X PATCH -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+  -d '{"externalIdp":{"issuer":"https://login.acme.example/","jwksUri":"https://login.acme.example/.well-known/jwks.json","audience":"https://auth.example.com/t/acme"}}' \
+  https://auth.example.com/api/tenants/$TENANT_ID
+```
+
+Handsal checks the signature against `jwksUri` (https only, keys cached), `iss` = `issuer`, `aud` contains `audience`, `exp` (60 s tolerance), and requires a `sub`. One IdP per tenant; `null` removes it.
+
+**Exchange:**
+
+```bash
+curl -s https://auth.example.com/t/acme/oauth/token \
+  -u "$CLIENT_ID:$CLIENT_SECRET" \
+  -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange \
+  -d subject_token_type=urn:ietf:params:oauth:token-type:access_token \
+  --data-urlencode "subject_token=$USER_JWT" \
+  -d resource=https://api.acme.example/orders \
+  -d scope=orders:read
+```
+
+```json
+{"access_token":"eyJ...","issued_token_type":"urn:ietf:params:oauth:token-type:access_token","token_type":"Bearer","expires_in":3600,"scope":"orders:read"}
+```
+
+`subject_token_type` is `urn:ietf:params:oauth:token-type:access_token` or `urn:ietf:params:oauth:token-type:jwt`; both work for either source. Failures: `unauthorized_client` (not an agent, `mayActFor` empty or not covering this kind of subject), `invalid_grant` (the subject token is not valid, deliberately without detail), `invalid_target`, `invalid_scope`. `actor_token` is not supported.
+
+**Reading the token in the resource server.** Verify it as in [section 2](#2-resource-server-verifying-a-token-locally). The claims of an exchanged token:
+
+| Claim | Meaning |
+|---|---|
+| `sub` | The subject: the user's ID at your IdP, or the `client_id` of the service whose token was exchanged. Use it as the identity for authorization and audit |
+| `act.sub` | The agent that is acting (its `client_id`). A nested `act.act` is an earlier actor in the chain; the most recent is outermost |
+| `client_id` | Always the agent application that holds the token |
+| `scope`, `aud` | What was granted and for which API, as usual |
+
+Treat the pair as "`sub`, via the agent `act.sub`". A token without `act` is a direct token (`sub` equals `client_id`). Log both. Do not authorize on `act` alone, and do not assume `sub` is a Handsal client when it comes from an external IdP. Exchanged tokens are independent tokens: introspect and revoke them like any other.

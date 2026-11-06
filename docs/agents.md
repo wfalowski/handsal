@@ -987,3 +987,21 @@ Minimal, inside the 6.3 page.
 - **Tenant isolation.** Every new query filters by `tenant_id` from the URL or the resolved tenant: `approval_requests` and `approval_rules` reads, the atomic redemption claim, the decide update, and the rule lookup. The composite FKs make a cross-tenant `scope_id` or `application_id` unrepresentable at the database level, the same guarantee `application_grants` already relies on.
 - **No new dependencies.** jose 6.2 covers remote JWKS for 6.4; `node:crypto` covers the HMAC; `AbortSignal.timeout` covers the webhook timeout.
 - **Two risks for the reviewer.** Artboard 08's claims preview has `sub` and `act` swapped relative to RFC 8693, so shipping it as drawn would publish a non-standard delegation claim. And 6.5 as specified leaves self-hosters no UI for rules or the webhook, a deliberate cut that likely needs a follow-up Settings task.
+
+---
+
+## Implementation deviations
+
+Where the shipped code differs from this note (the code is the reference; see [api.md](api.md) and [integration.md](integration.md)):
+
+- An `nbf` failure of a client assertion is reported with reason `assertion_not_yet_valid` (the note folded it into `assertion_expired`).
+- The assertion lifetime check includes the 60 s clock tolerance.
+- Migrations are numbered 0002 to 0006: 0002 is the 6.1/6.2/6.6 schema, 0003 approvals, 0004 6.4, 0005 6.5, 0006 review hardening.
+- `redeemApproval` lives in `services/token.service.ts`, not in `approval.service.ts`.
+- A pending poll records no token event; only the first request (`pending`) and the final redemption (`issued`) are logged.
+- Auto-approve needs a matching rule for every approval scope in the request; one rule never covers another scope.
+- A rule-approved row still goes through one poll, and that response carries `interval: 0`.
+- Redemption re-runs the CIDR, scope ceiling, budget and `agent_policy` checks, not only the grant check.
+- `approval_requests` has a pending cap per application (20) and a 30-day retention job.
+- The admin UI ships a webhook settings form (the note assumed API-only).
+- Auto-approve rules are API-only; there is no UI.
