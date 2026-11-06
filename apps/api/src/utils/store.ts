@@ -19,7 +19,11 @@ export class MemoryStore<T> implements KVStore<T> {
   private store = new Map<string, { value: T; expiresAt?: number }>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(cleanupIntervalMs = 60_000) {
+  /** `maxKeys` bounds memory: setting a new key at the cap evicts the oldest-inserted one. */
+  constructor(
+    cleanupIntervalMs = 60_000,
+    private readonly maxKeys = Number.POSITIVE_INFINITY,
+  ) {
     this.cleanupInterval = setInterval(() => {
       const now = Date.now();
       for (const [key, entry] of this.store) {
@@ -42,6 +46,10 @@ export class MemoryStore<T> implements KVStore<T> {
   }
 
   async set(key: string, value: T, ttlMs?: number): Promise<void> {
+    if (!this.store.has(key) && this.store.size >= this.maxKeys) {
+      const oldest = this.store.keys().next().value;
+      if (oldest !== undefined) this.store.delete(oldest);
+    }
     this.store.set(key, {
       value,
       expiresAt: ttlMs ? Date.now() + ttlMs : undefined,

@@ -1,11 +1,11 @@
 import { createHash, createPublicKey, type KeyObject } from "node:crypto";
-import { applicationKeys, db } from "@handsal/db";
+import { applicationKeys, applications, db } from "@handsal/db";
 import type {
   ApplicationKeyDto,
   applicationKeyCreateSchema,
   applicationKeyRetireSchema,
 } from "@handsal/shared";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, gt, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { ApiError } from "../middleware/error-handler.js";
 import { getApplication } from "./application.service.js";
@@ -56,10 +56,22 @@ function parseP256PublicKey(pem: string): { publicKeyPem: string; fingerprintSha
   };
 }
 
+const lastKey = () =>
+  new ApiError(
+    409,
+    "no_application_key",
+    "Register another active public key before removing the last one of a private_key_jwt application",
+  );
+
+const KEY_CONSTRAINTS = new Set([
+  "uq_application_keys_application_id_kid",
+  "uq_application_keys_application_id_fingerprint",
+]);
+
 /** Maps the duplicate kid / fingerprint unique violations to 409; rethrows anything else. */
 function mapConflict(err: unknown): never {
-  const cause = (err as { cause?: { code?: string } }).cause;
-  if (cause?.code === "23505") {
+  const cause = (err as { cause?: { code?: string; constraint?: string } }).cause;
+  if (cause?.code === "23505" && KEY_CONSTRAINTS.has(cause.constraint ?? "")) {
     throw new ApiError(
       409,
       "application_key_exists",
@@ -101,42 +113,90 @@ export async function createApplicationKey(
   return toApplicationKeyDto(row);
 }
 
-/** Marks a key retiring; it keeps verifying assertions until `now + graceSeconds`. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const activeKey = eq(applicationKeys.status, "active");
+/** Keys client-auth still accepts: active, or retiring before `retires_at`. */
+const usableKey = or(
+  activeKey,
+  and(eq(applicationKeys.status, "retiring"), gt(applicationKeys.retiresAt, sql`now()`)),
+);
+
+/**
+ * Locks the application row (serialising concurrent key changes), then throws
+ * `409 no_application_key` when a private_key_jwt application has no key matching `remaining`.
+ */
+async function assertKeyRemains(
+  tx: Tx,
+  tenantId: string,
+  appId: string,
+  remaining: SQL | undefined,
+): Promise<void> {
+  const [app] = await tx
+    .select({ method: applications.tokenEndpointAuthMethod })
+    .from(applications)
+    .where(and(eq(applications.tenantId, tenantId), eq(applications.id, appId)))
+    .for("update");
+  if (app?.method !== "private_key_jwt") return;
+  const [key] = await tx
+    .select({ id: applicationKeys.id })
+    .from(applicationKeys)
+    .where(
+      and(
+        eq(applicationKeys.tenantId, tenantId),
+        eq(applicationKeys.applicationId, appId),
+        remaining,
+      ),
+    )
+    .limit(1);
+  if (!key) throw lastKey();
+}
+
+const keyWhere = (tenantId: string, appId: string, keyId: string) =>
+  and(
+    eq(applicationKeys.tenantId, tenantId),
+    eq(applicationKeys.applicationId, appId),
+    eq(applicationKeys.id, keyId),
+  );
+
+/**
+ * Marks a key retiring; it keeps verifying assertions until `now + graceSeconds`.
+ * 409 when it would leave a private_key_jwt application without an active key.
+ */
 export async function retireApplicationKey(
   tenantId: string,
   appId: string,
   keyId: string,
   input: ApplicationKeyRetireInput,
 ): Promise<ApplicationKeyDto> {
-  const [row] = await db
-    .update(applicationKeys)
-    .set({ status: "retiring", retiresAt: new Date(Date.now() + input.graceSeconds * 1000) })
-    .where(
-      and(
-        eq(applicationKeys.tenantId, tenantId),
-        eq(applicationKeys.applicationId, appId),
-        eq(applicationKeys.id, keyId),
-      ),
-    )
-    .returning();
-  if (!row) throw notFound();
-  return toApplicationKeyDto(row);
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(applicationKeys)
+      .set({ status: "retiring", retiresAt: new Date(Date.now() + input.graceSeconds * 1000) })
+      .where(keyWhere(tenantId, appId, keyId))
+      .returning();
+    if (!row) throw notFound();
+    await assertKeyRemains(tx, tenantId, appId, activeKey); // throwing rolls the update back
+    return toApplicationKeyDto(row);
+  });
 }
 
+/** 409 when the key is the last usable one of a private_key_jwt application. */
 export async function deleteApplicationKey(
   tenantId: string,
   appId: string,
   keyId: string,
 ): Promise<void> {
-  const deleted = await db
-    .delete(applicationKeys)
-    .where(
-      and(
-        eq(applicationKeys.tenantId, tenantId),
-        eq(applicationKeys.applicationId, appId),
-        eq(applicationKeys.id, keyId),
-      ),
-    )
-    .returning({ id: applicationKeys.id });
-  if (deleted.length === 0) throw notFound();
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(applicationKeys)
+      .where(keyWhere(tenantId, appId, keyId))
+      .returning({ status: applicationKeys.status, retiresAt: applicationKeys.retiresAt });
+    if (!row) throw notFound();
+    const wasUsable =
+      row.status === "active" ||
+      (row.status === "retiring" && row.retiresAt !== null && row.retiresAt > new Date());
+    // Deleting an already-unusable key changes nothing for client auth, so it is always allowed.
+    if (wasUsable) await assertKeyRemains(tx, tenantId, appId, usableKey);
+  });
 }

@@ -11,6 +11,7 @@ import {
   signClientAssertion,
   truncateAll,
 } from "../test/factories.js";
+import { MemoryStore } from "../utils/store.js";
 import { rotateSecret, setApplicationStatus } from "./application.service.js";
 import {
   assertionClientId,
@@ -253,6 +254,37 @@ describe("authenticateClientAssertion (private_key_jwt)", () => {
     expect(await failureReason(auth(expired))).toBe("assertion_expired");
   });
 
+  it("allows the clock tolerance on top of the max lifetime", async () => {
+    const { sign, auth } = await setup();
+    // A client clock 30 s fast signing exp = its now + 300.
+    await expect(
+      auth(sign({ claims: { iat: now() + 30, exp: now() + 330 } })),
+    ).resolves.toBeDefined();
+    expect(await failureReason(auth(sign({ claims: { exp: now() + 400 } })))).toBe("bad_assertion");
+  });
+
+  it("reports a future nbf as assertion_not_yet_valid", async () => {
+    const { sign, auth } = await setup();
+    expect(await failureReason(auth(sign({ claims: { nbf: now() + 120 } })))).toBe(
+      "assertion_not_yet_valid",
+    );
+  });
+
+  it("rejects a jti that is empty, too long or not a string", async () => {
+    const { sign, auth } = await setup();
+    await expect(auth(sign({ claims: { jti: "j".repeat(128) } }))).resolves.toBeDefined();
+    for (const jti of ["", "j".repeat(129), 5, { a: 1 }] as unknown as string[]) {
+      expect(await failureReason(auth(sign({ claims: { jti } })))).toBe("bad_assertion");
+    }
+  });
+
+  it("rejects a non-string iss equal to sub", async () => {
+    const { sign, auth } = await setup();
+    const claims = { iss: 5, sub: 5 } as unknown as { iss: string; sub: string };
+    expect(assertionClientId(await sign({ claims }))).toBeUndefined();
+    expect(await failureReason(auth(sign({ claims })))).toBe("bad_assertion");
+  });
+
   it("rejects missing jti or exp, and iat in the future", async () => {
     const { sign, auth } = await setup();
     expect(await failureReason(auth(sign({ claims: { jti: undefined } })))).toBe("bad_assertion");
@@ -343,5 +375,20 @@ describe("authenticateClientAssertion (private_key_jwt)", () => {
     const { application, sign, auth } = await setup();
     expect(await failureReason(auth(sign(), "other-client"))).toBe("bad_assertion");
     await expect(auth(sign(), application.clientId)).resolves.toBeDefined();
+  });
+});
+
+describe("MemoryStore maxKeys (bounds the jti replay cache)", () => {
+  it("evicts the oldest key and never exceeds the cap", async () => {
+    const store = new MemoryStore<true>(60_000, 3);
+    for (let i = 0; i < 10; i++) {
+      await store.set(`k${i}`, true, 60_000);
+      expect(await store.size()).toBeLessThanOrEqual(3);
+    }
+    expect(await store.has("k6")).toBe(false);
+    expect(await store.has("k9")).toBe(true);
+    await store.set("k9", true, 60_000); // overwriting an existing key evicts nothing
+    expect(await store.has("k7")).toBe(true);
+    store.destroy();
   });
 });

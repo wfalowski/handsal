@@ -5,9 +5,10 @@ import {
   OAUTH_ERRORS,
 } from "@handsal/shared";
 import { and, eq, gt, or, sql } from "drizzle-orm";
-import { decodeJwt, errors, importSPKI, type JWTPayload, jwtVerify } from "jose";
+import { errors, importSPKI, type JWTPayload, jwtVerify } from "jose";
 import { env } from "../env.js";
 import { OAuthError } from "../middleware/error-handler.js";
+import { assertionClientId } from "../utils/client-assertion.js";
 import { hashSecret, verifySecret } from "../utils/crypto.js";
 import { decodeHeader } from "../utils/jwt.js";
 import { logSecurityEvent, SecurityEvent, SecuritySeverity } from "../utils/security-logger.js";
@@ -29,9 +30,11 @@ export type ClientAuthFailureReason =
   | "bad_assertion"
   | "unknown_assertion_key"
   | "assertion_expired"
+  | "assertion_not_yet_valid"
   | "assertion_replayed";
 
 // Verified against for unknown/mismatched clients so every failure costs one argon2 verify.
+// The private_key_jwt path is not timing-equalised; client ids are high-entropy and not secret.
 const DUMMY_HASH_PROMISE = hashSecret("handsal-dummy-secret-for-timing-safety");
 
 async function burnDummyVerify(secret: string): Promise<void> {
@@ -114,25 +117,21 @@ export async function authenticateClient(
   return { application };
 }
 
+export { assertionClientId };
+
+/** Cap on live replay entries; beyond it the oldest jti is evicted (bounds memory). */
+const ASSERTION_JTI_MAX_KEYS = 100_000;
+const MAX_JTI_LENGTH = 128;
+
 // shortcut: process-local replay cache, so an assertion can be replayed once per replica; move to a shared store with the rate limiter.
-const assertionJtis = new MemoryStore<true>();
+const assertionJtis = new MemoryStore<true>(60_000, ASSERTION_JTI_MAX_KEYS);
 
-/** `iss` of an unverified client assertion when it equals `sub` (the claimed client_id). */
-export function assertionClientId(assertion: string | undefined): string | undefined {
-  if (!assertion) return undefined;
-  try {
-    const { iss, sub } = decodeJwt(assertion);
-    return iss && iss === sub ? iss : undefined;
-  } catch {
-    return undefined;
+function timeClaimReason(err: unknown): ClientAuthFailureReason | undefined {
+  if (err instanceof errors.JWTExpired) return "assertion_expired";
+  if (err instanceof errors.JWTClaimValidationFailed && err.claim === "nbf") {
+    return "assertion_not_yet_valid";
   }
-}
-
-function isTimeClaimFailure(err: unknown): boolean {
-  return (
-    err instanceof errors.JWTExpired ||
-    (err instanceof errors.JWTClaimValidationFailed && err.claim === "nbf")
-  );
+  return undefined;
 }
 
 /**
@@ -193,16 +192,18 @@ export async function authenticateClientAssertion(
       clockTolerance: ASSERTION_CLOCK_TOLERANCE_SECONDS,
     }));
   } catch (err) {
-    const reason = isTimeClaimFailure(err) ? "assertion_expired" : "bad_assertion";
-    fail(tenant.id, clientId, sourceIp, reason);
+    fail(tenant.id, clientId, sourceIp, timeClaimReason(err) ?? "bad_assertion");
   }
 
   const now = Math.floor(Date.now() / 1000);
   const { exp, iat, jti } = payload;
   if (
-    !jti ||
+    typeof jti !== "string" ||
+    jti.length === 0 ||
+    jti.length > MAX_JTI_LENGTH ||
     exp === undefined ||
-    exp - now > ASSERTION_MAX_LIFETIME_SECONDS ||
+    // Tolerance applies here too, or a client with a slightly fast clock and a 300 s lifetime is locked out.
+    exp - now > ASSERTION_MAX_LIFETIME_SECONDS + ASSERTION_CLOCK_TOLERANCE_SECONDS ||
     (iat !== undefined && iat > now + ASSERTION_CLOCK_TOLERANCE_SECONDS)
   ) {
     fail(tenant.id, clientId, sourceIp, "bad_assertion");
@@ -214,7 +215,8 @@ export async function authenticateClientAssertion(
     fail(tenant.id, clientId, sourceIp, "assertion_replayed");
   }
   const ttlMs = exp * 1000 - Date.now() + ASSERTION_CLOCK_TOLERANCE_SECONDS * 1000;
-  await assertionJtis.set(replayKey, true, Math.min(Math.max(ttlMs, 1), 360_000));
+  const maxTtlMs = (ASSERTION_MAX_LIFETIME_SECONDS + 2 * ASSERTION_CLOCK_TOLERANCE_SECONDS) * 1000;
+  await assertionJtis.set(replayKey, true, Math.min(Math.max(ttlMs, 1), maxTtlMs));
 
   // Checked last, so status is not an oracle for unauthenticated callers.
   if (app.status === "disabled") {

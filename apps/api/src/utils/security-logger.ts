@@ -59,9 +59,17 @@ interface SecurityLogPayload {
   details?: Record<string, unknown>;
 }
 
+// clientId often comes straight from an unauthenticated request; cap it so callers cannot bloat the log.
+const MAX_CLIENT_ID_LOG_LENGTH = 128;
+
 export function logSecurityEvent(payload: SecurityLogPayload): void {
   const { event, severity, ...rest } = payload;
-  const logData = { event, severity, ...rest };
+  const logData = {
+    event,
+    severity,
+    ...rest,
+    clientId: rest.clientId?.slice(0, MAX_CLIENT_ID_LOG_LENGTH),
+  };
 
   switch (severity) {
     case SecuritySeverity.CRITICAL:

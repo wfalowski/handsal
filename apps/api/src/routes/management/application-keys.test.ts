@@ -69,6 +69,17 @@ describe("…/applications/:appId/keys", () => {
 
     expect((await req("GET", url)).body).toEqual({ items: [created.body] });
 
+    // The only key of a private_key_jwt application can be neither retired nor deleted.
+    for (const res of [
+      await req("POST", `${url}/${created.body.id}/retire`, { graceSeconds: 60 }),
+      await req("DELETE", `${url}/${created.body.id}`),
+    ]) {
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("no_application_key");
+    }
+    expect((await req("GET", url)).body).toEqual({ items: [created.body] });
+
+    const next = await req("POST", url, { kid: "k2", publicKeyPem: await pem() });
     const retired = await req("POST", `${url}/${created.body.id}/retire`, { graceSeconds: 60 });
     expect(retired.status).toBe(200);
     expect(retired.body.status).toBe("retiring");
@@ -76,7 +87,36 @@ describe("…/applications/:appId/keys", () => {
 
     expect((await req("DELETE", `${url}/${created.body.id}`)).status).toBe(204);
     expect((await req("DELETE", `${url}/${created.body.id}`)).status).toBe(404);
-    expect((await req("GET", url)).body).toEqual({ items: [] });
+    expect((await req("GET", url)).body).toEqual({ items: [next.body] });
+  });
+
+  it("refuses to delete the last usable key, but not an expired retiring one", async () => {
+    const { url, req } = await setup();
+    const a = await req("POST", url, { kid: "a", publicKeyPem: await pem() });
+    const b = await req("POST", url, { kid: "b", publicKeyPem: await pem() });
+    // b retiring within its grace still verifies, so a's retire is refused but its delete is not.
+    expect((await req("POST", `${url}/${b.body.id}/retire`, { graceSeconds: 600 })).status).toBe(
+      200,
+    );
+    expect((await req("POST", `${url}/${a.body.id}/retire`, { graceSeconds: 600 })).status).toBe(
+      409,
+    );
+    expect((await req("DELETE", `${url}/${a.body.id}`)).status).toBe(204);
+    expect((await req("DELETE", `${url}/${b.body.id}`)).status).toBe(409);
+    await db
+      .update(applicationKeys)
+      .set({ retiresAt: new Date(Date.now() - 1000) })
+      .where(eq(applicationKeys.id, b.body.id));
+    expect((await req("DELETE", `${url}/${b.body.id}`)).status).toBe(204);
+  });
+
+  it("allows removing the last key of an application using a client secret", async () => {
+    const { tenant, req } = await setup();
+    const { application } = await createApplication(tenant.id);
+    const url = `/api/tenants/${tenant.id}/applications/${application.id}/keys`;
+    const k = await req("POST", url, { kid: "k1", publicKeyPem: await pem() });
+    expect((await req("POST", `${url}/${k.body.id}/retire`, { graceSeconds: 0 })).status).toBe(200);
+    expect((await req("DELETE", `${url}/${k.body.id}`)).status).toBe(204);
   });
 
   it("rejects a P-384 key, a private key and garbage with 400 invalid_public_key", async () => {

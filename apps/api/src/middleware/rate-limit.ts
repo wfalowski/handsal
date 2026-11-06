@@ -1,6 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 import type { AppEnv } from "../app.js";
-import { assertionClientId } from "../services/client-auth.service.js";
+import { assertionClientId } from "../utils/client-assertion.js";
 import { getClientIp } from "../utils/client-ip.js";
 import { logSecurityEvent, SecurityEvent, SecuritySeverity } from "../utils/security-logger.js";
 import { type KVStore, MemoryStore } from "../utils/store.js";
