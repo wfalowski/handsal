@@ -1,7 +1,14 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+
+const { mockLogSecurityEvent } = vi.hoisted(() => ({ mockLogSecurityEvent: vi.fn() }));
+vi.mock("../utils/security-logger.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../utils/security-logger.js")>()),
+  logSecurityEvent: mockLogSecurityEvent,
+}));
+
 import { ApiError, errorHandler, OAuthError } from "./error-handler.js";
 
 const app = new Hono();
@@ -10,6 +17,14 @@ app.get("/oauth", () => {
 });
 app.get("/oauth-client", () => {
   throw new OAuthError("invalid_client", 401, "Bad creds");
+});
+app.get("/oauth-scope", () => {
+  throw new OAuthError("invalid_scope", 400, "Unknown scope");
+});
+app.get("/oauth-client-logged", () => {
+  const err = new OAuthError("invalid_client", 401, "Bad creds");
+  err.securityLogged = true;
+  throw err;
 });
 app.get("/api", () => {
   throw new ApiError(409, "conflict", "Slug taken", { field: "slug" });
@@ -39,6 +54,22 @@ describe("errorHandler", () => {
     const res = await app.request("/oauth-client");
     expect(res.status).toBe(401);
     expect(res.headers.get("WWW-Authenticate")).toBe('Basic realm="handsal"');
+  });
+
+  it("logs invalid_client / invalid_scope as their specific security events", async () => {
+    await app.request("/oauth-client");
+    expect(mockLogSecurityEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ event: "client_auth_failure" }),
+    );
+    await app.request("/oauth-scope");
+    expect(mockLogSecurityEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({ event: "invalid_scope_request" }),
+    );
+  });
+
+  it("does not re-log an error already logged at its source", async () => {
+    await app.request("/oauth-client-logged");
+    expect(mockLogSecurityEvent).not.toHaveBeenCalled();
   });
 
   it("maps ApiError to the management envelope", async () => {

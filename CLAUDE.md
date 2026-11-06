@@ -8,7 +8,7 @@ Self-hostable authorization server for services (and later AI agents) talking to
 - `docker compose up -d` — local PostgreSQL (`postgresql://handsal:handsal_dev@localhost:5434/handsal`)
 - `pnpm dev` — API `:3000` + web `:5173` (turbo, watch)
 - `pnpm build` / `pnpm typecheck` / `pnpm check` (Biome lint+format) / `pnpm check:fix`
-- `pnpm test` — vitest (`apps/api`, `packages/shared`, `packages/db`); API/db tests need Postgres + `pnpm db:migrate`
+- `pnpm test` — vitest (`apps/api`, `packages/shared`, `packages/db`); API/db tests need Postgres + `pnpm db:migrate`; they use `TEST_DATABASE_URL` (default `…:5434/handsal_test`, db name must end in `_test`), never `DATABASE_URL`
 - `pnpm db:generate` / `pnpm db:migrate` / `pnpm db:seed`
 - `docker build -t handsal .` ; `docker compose -f docker-compose.prod.yml up -d`
 

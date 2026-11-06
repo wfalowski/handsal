@@ -9,7 +9,7 @@ import type {
   tokenStatsDtoSchema,
 } from "../validation/token-events.schema.js";
 
-export interface ApiError {
+export interface ApiErrorBody {
   error: string;
   error_description: string;
   details?: unknown;

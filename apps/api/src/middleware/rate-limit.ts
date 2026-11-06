@@ -18,7 +18,7 @@ interface RateLimitOptions {
   store?: KVStore<RateLimitEntry>;
   /** `oauth` = RFC 6749-style body + no-store headers (`/t`), `api` = management envelope. */
   errorBody?: "oauth" | "api";
-  /** Max live buckets per limiter before new keys are shed (bounds memory). */
+  /** Max live buckets per limiter; beyond it the oldest bucket is evicted (bounds memory). */
   maxKeys?: number;
 }
 
@@ -28,18 +28,15 @@ export function ipKey(c: Context): string {
 }
 
 /**
- * Rate-limit key for OAuth endpoints that accept client credentials.
- *
- * A pre-auth `client_id` is never used alone: an attacker who knows a client_id
- * must not be able to exhaust that client's quota from elsewhere. Claims are
- * always bound to the source IP: `ip:{ip}:client:{id}`, or `ip:{ip}` when no
- * client_id is found (Basic header absent and no parsed form body cached on
- * `c.var.formBody` — the token route is expected to set it before this runs).
+ * Per-client rate-limit key for OAuth endpoints that accept client credentials:
+ * `client:{id}` with no IP component, so one client's quota is shared across all
+ * its source IPs (the per-IP limiter, `ipKey`, runs separately). Falls back to
+ * `ip:{ip}` when no client_id is found (Basic header absent and no parsed form
+ * body cached on `c.var.formBody` — the token route sets it before this runs).
  */
 export function clientIdKey(c: Context<AppEnv>): string {
-  const ip = getClientIp(c);
   const clientId = basicClientId(c.req.header("Authorization")) ?? c.var.formBody?.client_id;
-  return clientId ? `ip:${ip}:client:${clientId}` : `ip:${ip}`;
+  return clientId ? `client:${clientId}` : `ip:${getClientIp(c)}`;
 }
 
 function basicClientId(authHeader: string | undefined): string | undefined {
@@ -67,6 +64,9 @@ export function rateLimit(opts: RateLimitOptions): MiddlewareHandler<AppEnv> {
   const store = opts.store ?? new MemoryStore<RateLimitEntry>();
   const errorBody = opts.errorBody ?? "api";
   const maxKeys = opts.maxKeys ?? 20_000;
+  // This limiter's buckets in creation order (key -> resetAt). KVStore cannot
+  // enumerate keys, so this index drives the expiry sweep and oldest-first eviction.
+  const buckets = new Map<string, number>();
 
   return async (c, next) => {
     const now = Date.now();
@@ -75,11 +75,22 @@ export function rateLimit(opts: RateLimitOptions): MiddlewareHandler<AppEnv> {
     // shortcut: get+set is not atomic across awaits; concurrent first hits may undercount by a few, fine for an in-memory limiter, revisit with a Redis store (INCR).
     let entry = await store.get(key);
     if (!entry) {
-      // Expired-but-unswept keys still count until the store's periodic sweep.
-      if ((await store.size()) >= maxKeys) {
-        return tooManyRequests(c, 60, errorBody);
+      buckets.delete(key);
+      if (buckets.size >= maxKeys) {
+        for (const [k, resetAt] of buckets) {
+          if (resetAt > now) continue;
+          buckets.delete(k);
+          await store.delete(k);
+        }
+      }
+      // Never reject an unseen key: a flood of random keys must not lock out real clients.
+      for (const oldest of buckets.keys()) {
+        if (buckets.size < maxKeys) break;
+        buckets.delete(oldest);
+        await store.delete(oldest);
       }
       entry = { count: 0, resetAt: now + opts.windowMs };
+      buckets.set(key, entry.resetAt);
     }
     entry.count += 1;
     // ttl 0 would mean "never expire" in MemoryStore, so clamp to >= 1 ms

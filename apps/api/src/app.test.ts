@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { formRequest } from "./test/helpers.js";
@@ -58,5 +61,25 @@ describe("app", () => {
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:5173");
     const health = await app.request("/health", { headers: { Origin: "http://localhost:5173" } });
     expect(health.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("serves the SPA fallback without swallowing API paths", async () => {
+    const publicDir = mkdtempSync(join(tmpdir(), "handsal-spa-"));
+    try {
+      writeFileSync(join(publicDir, "index.html"), "<!doctype html><title>spa</title>");
+      const spa = createApp({ readinessCheck: async () => {}, serveSpa: true, publicDir });
+
+      for (const path of ["/t/acme/oauth/bogus", "/api/nope"]) {
+        const res = await spa.request(path);
+        expect(res.status, path).toBe(404);
+        expect(res.headers.get("Content-Type"), path).toContain("application/json");
+      }
+
+      const res = await spa.request("/anything-else");
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain("<title>spa</title>");
+    } finally {
+      rmSync(publicDir, { recursive: true, force: true });
+    }
   });
 });

@@ -5,7 +5,8 @@ const API_CSP = "default-src 'none'; frame-ancestors 'none'";
 const SPA_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'";
 
-function isApiPath(path: string): boolean {
+/** Paths served by the API (JSON); everything else belongs to the admin SPA. */
+export function isApiPath(path: string): boolean {
   return (
     path === "/api" ||
     path.startsWith("/api/") ||

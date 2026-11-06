@@ -1,5 +1,14 @@
+import { existsSync } from "fs";
+import { dirname, join, parse } from "path";
+import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
-import { isRepeatedBlock, KNOWN_PLACEHOLDER_SECRETS, productionEnvSchema } from "./env.js";
+import { z } from "zod";
+import {
+  findRepoRoot,
+  isRepeatedBlock,
+  KNOWN_PLACEHOLDER_SECRETS,
+  productionEnvSchema,
+} from "./env.js";
 
 // A high-entropy 64-hex value that is NOT a repeated block, standing in for a
 // real `openssl rand -hex 32` KEY_ENCRYPTION_SECRET.
@@ -19,8 +28,22 @@ function prodEnv(overrides: Record<string, string> = {}) {
 
 function fieldErrors(input: Record<string, string>) {
   const result = productionEnvSchema.safeParse(input);
-  return result.success ? {} : result.error.flatten().fieldErrors;
+  return result.success ? {} : z.flattenError(result.error).fieldErrors;
 }
+
+describe("findRepoRoot", () => {
+  it("walks up to the directory holding pnpm-workspace.yaml", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const root = findRepoRoot(here);
+    expect(root).toBeDefined();
+    expect(existsSync(join(root as string, "pnpm-workspace.yaml"))).toBe(true);
+    expect(findRepoRoot(join(here, "..", "dist"))).toBe(root);
+  });
+
+  it("returns undefined when no workspace file exists up to the filesystem root", () => {
+    expect(findRepoRoot(parse(process.cwd()).root)).toBeUndefined();
+  });
+});
 
 describe("isRepeatedBlock", () => {
   it("detects the committed example key and trivial repeats", () => {
@@ -87,6 +110,43 @@ describe("productionEnvSchema", () => {
       ADMIN_API_KEY: "k".repeat(32),
     };
     expect(productionEnvSchema.safeParse(dev).success).toBe(true);
+  });
+
+  it("strips trailing slashes from PUBLIC_URL", () => {
+    const result = productionEnvSchema.safeParse(
+      prodEnv({ PUBLIC_URL: "https://auth.example.com/" }),
+    );
+    expect(result.data?.PUBLIC_URL).toBe("https://auth.example.com");
+  });
+
+  it("requires BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD together", () => {
+    const onlyEmail = fieldErrors(
+      prodEnv({ NODE_ENV: "development", BOOTSTRAP_ADMIN_EMAIL: "admin@example.com" }),
+    );
+    expect(onlyEmail.BOOTSTRAP_ADMIN_PASSWORD).toBeDefined();
+    expect(onlyEmail.BOOTSTRAP_ADMIN_EMAIL).toBeUndefined();
+
+    const onlyPassword = fieldErrors(prodEnv({ BOOTSTRAP_ADMIN_PASSWORD: "s3cret-passphrase" }));
+    expect(onlyPassword.BOOTSTRAP_ADMIN_EMAIL).toBeDefined();
+    expect(onlyPassword.BOOTSTRAP_ADMIN_PASSWORD).toBeUndefined();
+
+    const both = prodEnv({
+      BOOTSTRAP_ADMIN_EMAIL: "admin@example.com",
+      BOOTSTRAP_ADMIN_PASSWORD: "s3cret-passphrase",
+    });
+    expect(productionEnvSchema.safeParse(both).success).toBe(true);
+  });
+
+  it("rejects the .env.example BOOTSTRAP_ADMIN_PASSWORD placeholder in production", () => {
+    expect(KNOWN_PLACEHOLDER_SECRETS.has("change-me")).toBe(true);
+    expect(
+      fieldErrors(
+        prodEnv({
+          BOOTSTRAP_ADMIN_EMAIL: "admin@example.com",
+          BOOTSTRAP_ADMIN_PASSWORD: "change-me",
+        }),
+      ).BOOTSTRAP_ADMIN_PASSWORD,
+    ).toBeDefined();
   });
 
   it("rejects a 31-char ADMIN_API_KEY everywhere", () => {

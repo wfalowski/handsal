@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import type { AppEnv } from "../app.js";
-import { clientIdKey, rateLimit } from "./rate-limit.js";
+import { MemoryStore } from "../utils/store.js";
+import { clientIdKey, type RateLimitEntry, rateLimit } from "./rate-limit.js";
 
 function limitedApp(opts: Parameters<typeof rateLimit>[0]) {
   const app = new Hono<AppEnv>();
@@ -55,12 +56,35 @@ describe("rateLimit", () => {
     expect((await app.request("/x")).status).toBe(200);
   });
 
-  it("sheds new keys once maxKeys buckets are live", async () => {
+  it("admits a new key when maxKeys buckets are live, evicting the oldest", async () => {
+    const store = new MemoryStore<RateLimitEntry>();
     let n = 0;
-    const app = limitedApp({ keyFn: () => `k${n++}`, max: 10, windowMs: 60_000, maxKeys: 2 });
+    const app = limitedApp({
+      keyFn: () => `k${n++}`,
+      max: 10,
+      windowMs: 60_000,
+      maxKeys: 2,
+      store,
+    });
     expect((await app.request("/x")).status).toBe(200);
     expect((await app.request("/x")).status).toBe(200);
-    expect((await app.request("/x")).status).toBe(429);
+    expect((await app.request("/x")).status).toBe(200);
+    expect(await store.size()).toBeLessThanOrEqual(2);
+    expect(await store.has("k0")).toBe(false);
+    expect(await store.has("k2")).toBe(true);
+    store.destroy();
+  });
+
+  it("derives Retry-After from the remaining window and sets X-RateLimit-* on 429", async () => {
+    const app = limitedApp({ keyFn: () => "k", max: 1, windowMs: 5_000, errorBody: "oauth" });
+    await app.request("/x");
+    const res = await app.request("/x");
+    expect(res.status).toBe(429);
+    const retryAfter = Number(res.headers.get("Retry-After"));
+    expect(retryAfter).toBeGreaterThanOrEqual(1);
+    expect(retryAfter).toBeLessThanOrEqual(5);
+    expect(res.headers.get("X-RateLimit-Limit")).toBe("1");
+    expect(res.headers.get("X-RateLimit-Remaining")).toBe("0");
   });
 });
 
@@ -72,14 +96,14 @@ describe("clientIdKey", () => {
     return c.text(clientIdKey(c));
   });
 
-  it("binds the Basic client_id to the source IP", async () => {
+  it("keys on the Basic client_id alone, with no IP component", async () => {
     const res = await app.request("/k", { headers: { Authorization: basic("app_abc") } });
-    expect(await res.text()).toBe("ip:unknown:client:app_abc");
+    expect(await res.text()).toBe("client:app_abc");
   });
 
   it("reads client_id from the cached form body", async () => {
     const res = await app.request("/k", { method: "POST" });
-    expect(await res.text()).toBe("ip:unknown:client:app_from_body");
+    expect(await res.text()).toBe("client:app_from_body");
   });
 
   it("falls back to the IP-only key", async () => {

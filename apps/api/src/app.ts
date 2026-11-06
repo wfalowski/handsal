@@ -8,7 +8,7 @@ import { cors } from "hono/cors";
 import { env } from "./env.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { requestLogger } from "./middleware/request-logger.js";
-import { securityHeaders } from "./middleware/security-headers.js";
+import { isApiPath, securityHeaders } from "./middleware/security-headers.js";
 import { managementRoutes } from "./routes/management/index.js";
 import { oauthRoutes } from "./routes/oauth/index.js";
 import { createLogger } from "./utils/logger.js";
@@ -26,6 +26,10 @@ export type AppEnv = {
 export interface AppOptions {
   /** Resolves when the database is reachable; rejects otherwise. */
   readinessCheck?: () => Promise<void>;
+  /** Serve the admin SPA (when the admin panel is enabled); defaults to production. */
+  serveSpa?: boolean;
+  /** Directory holding the built SPA; defaults to `./public`. */
+  publicDir?: string;
 }
 
 const logger = createLogger("app");
@@ -38,7 +42,11 @@ async function defaultReadinessCheck(): Promise<void> {
   await pool.query("select 1");
 }
 
-export function createApp({ readinessCheck = defaultReadinessCheck }: AppOptions = {}) {
+export function createApp({
+  readinessCheck = defaultReadinessCheck,
+  serveSpa = env.NODE_ENV === "production",
+  publicDir = "./public",
+}: AppOptions = {}) {
   const app = new Hono<AppEnv>();
 
   // Request correlation ID
@@ -102,10 +110,13 @@ export function createApp({ readinessCheck = defaultReadinessCheck }: AppOptions
   if (env.ENABLE_ADMIN_PANEL === "true") {
     app.route("/api", managementRoutes);
 
-    // In production, serve the built admin SPA (copied to ./public)
-    if (env.NODE_ENV === "production") {
-      app.use("/*", serveStatic({ root: "./public" }));
-      app.get("/*", serveStatic({ root: "./public", path: "index.html" }));
+    // In production, serve the built admin SPA (copied to ./public). API paths
+    // skip it so unknown /api, /t, /health, /ready routes still get a JSON 404.
+    if (serveSpa) {
+      const assets = serveStatic({ root: publicDir });
+      const spaIndex = serveStatic({ root: publicDir, path: "index.html" });
+      app.use("/*", (c, next) => (isApiPath(c.req.path) ? next() : assets(c, next)));
+      app.get("/*", (c, next) => (isApiPath(c.req.path) ? next() : spaIndex(c, next)));
     }
   } else {
     app.all("/api/*", (c) =>

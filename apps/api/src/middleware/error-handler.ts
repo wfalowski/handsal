@@ -7,6 +7,7 @@ import {
   extractRequestInfo,
   logSecurityEvent,
   SecurityEvent,
+  type SecurityEventType,
   SecuritySeverity,
 } from "../utils/security-logger.js";
 
@@ -41,19 +42,21 @@ export class ApiError extends Error {
   }
 }
 
-const SECURITY_ERROR_CODES = new Set<string>([
-  OAUTH_ERRORS.INVALID_CLIENT,
-  OAUTH_ERRORS.INVALID_SCOPE,
-  OAUTH_ERRORS.UNAUTHORIZED_CLIENT,
-  OAUTH_ERRORS.UNSUPPORTED_GRANT_TYPE,
+// OAuth error code -> security event logged for it (unless already logged at source).
+const SECURITY_ERROR_EVENTS = new Map<string, SecurityEventType>([
+  [OAUTH_ERRORS.INVALID_CLIENT, SecurityEvent.CLIENT_AUTH_FAILURE],
+  [OAUTH_ERRORS.INVALID_SCOPE, SecurityEvent.INVALID_SCOPE_REQUEST],
+  [OAUTH_ERRORS.UNAUTHORIZED_CLIENT, SecurityEvent.MALFORMED_REQUEST],
+  [OAUTH_ERRORS.UNSUPPORTED_GRANT_TYPE, SecurityEvent.MALFORMED_REQUEST],
 ]);
 
 export function errorHandler(err: Error, c: Context): Response {
   if (err instanceof OAuthError) {
-    if (!err.securityLogged && SECURITY_ERROR_CODES.has(err.errorCode)) {
+    const event = SECURITY_ERROR_EVENTS.get(err.errorCode);
+    if (!err.securityLogged && event) {
       logSecurityEvent({
         ...extractRequestInfo(c),
-        event: SecurityEvent.MALFORMED_REQUEST,
+        event,
         severity: SecuritySeverity.MEDIUM,
         details: { errorCode: err.errorCode, errorDescription: err.errorDescription },
       });

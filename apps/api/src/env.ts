@@ -1,17 +1,30 @@
 import dotenv from "dotenv";
-import { dirname, resolve } from "path";
+import { existsSync } from "fs";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { z } from "zod";
 
-// Load .env from the monorepo root (never overrides variables already set).
-const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(__dirname, "..", "..", "..", ".env"), quiet: true });
+/** Nearest ancestor of `startDir` holding `pnpm-workspace.yaml`, or undefined. */
+export function findRepoRoot(startDir: string): string | undefined {
+  for (let dir = startDir; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, "pnpm-workspace.yaml"))) return dir;
+    if (dirname(dir) === dir) return undefined;
+  }
+}
+
+// Dev convenience: load <repo root>/.env from both src/ and dist/ (never overrides
+// variables already set). Production gets its env from the deployment only.
+if (process.env.NODE_ENV !== "production") {
+  const root = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
+  const envFile = root && join(root, ".env");
+  if (envFile && existsSync(envFile)) dotenv.config({ path: envFile, quiet: true });
+}
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().min(1),
   // Base URL of this instance; tenant issuers are `${PUBLIC_URL}/t/<slug>`.
-  PUBLIC_URL: z.url(),
+  PUBLIC_URL: z.url().transform((u) => u.replace(/\/+$/, "")),
   KEY_ENCRYPTION_SECRET: z
     .string()
     .length(64)
@@ -41,6 +54,7 @@ export const envSchema = z.object({
 // no secret at all.
 export const KNOWN_PLACEHOLDER_SECRETS = new Set([
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", // KEY_ENCRYPTION_SECRET placeholder
+  "change-me", // BOOTSTRAP_ADMIN_PASSWORD placeholder
 ]);
 
 /**
@@ -57,7 +71,29 @@ export function isRepeatedBlock(s: string): boolean {
 }
 
 export const productionEnvSchema = envSchema.superRefine((data, ctx) => {
+  const hasEmail = data.BOOTSTRAP_ADMIN_EMAIL !== undefined;
+  if (hasEmail !== (data.BOOTSTRAP_ADMIN_PASSWORD !== undefined)) {
+    const missing = hasEmail ? "BOOTSTRAP_ADMIN_PASSWORD" : "BOOTSTRAP_ADMIN_EMAIL";
+    ctx.addIssue({
+      code: "custom",
+      message: `${missing} is required when the other BOOTSTRAP_ADMIN_* variable is set`,
+      path: [missing],
+    });
+  }
+
   if (data.NODE_ENV !== "production") return;
+
+  if (
+    data.BOOTSTRAP_ADMIN_PASSWORD !== undefined &&
+    KNOWN_PLACEHOLDER_SECRETS.has(data.BOOTSTRAP_ADMIN_PASSWORD)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        "BOOTSTRAP_ADMIN_PASSWORD is the placeholder from .env.example and must be replaced in production",
+      path: ["BOOTSTRAP_ADMIN_PASSWORD"],
+    });
+  }
 
   if (!data.PUBLIC_URL.startsWith("https://")) {
     ctx.addIssue({
