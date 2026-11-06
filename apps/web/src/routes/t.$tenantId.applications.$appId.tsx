@@ -143,7 +143,12 @@ function ApplicationDetailPage() {
         </div>
 
         <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-6">
-          <CurlSnippet tokenEndpoint={tokenEndpoint} clientId={app.clientId} grants={grants} />
+          <CurlSnippet
+            tokenEndpoint={tokenEndpoint}
+            clientId={app.clientId}
+            authMethod={app.tokenEndpointAuthMethod}
+            grants={grants}
+          />
           <section className={CARD}>
             <h2 className="border-hover border-b p-4 pr-5 pl-5 font-semibold text-[15px]">
               Token profile

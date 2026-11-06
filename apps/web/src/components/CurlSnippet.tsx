@@ -1,3 +1,4 @@
+import type { ApplicationDto } from "@handsal/shared";
 import { useId, useState } from "react";
 import type { GrantView } from "../lib/queries";
 import { Button } from "./Button";
@@ -5,11 +6,24 @@ import { Button } from "./Button";
 type Props = {
   tokenEndpoint: string;
   clientId: string;
+  authMethod: ApplicationDto["tokenEndpointAuthMethod"];
   /** One token targets one resource, so the example uses one grant's audience and only its scopes. */
   grants: GrantView[];
 };
 
-export function CurlSnippet({ tokenEndpoint, clientId, grants }: Props) {
+const AUTH_LINES: Record<
+  ApplicationDto["tokenEndpointAuthMethod"],
+  (clientId: string) => string[]
+> = {
+  client_secret_basic: (clientId) => [`-u ${clientId}:$CLIENT_SECRET`],
+  client_secret_post: (clientId) => [`-d client_id=${clientId}`, "-d client_secret=$CLIENT_SECRET"],
+  private_key_jwt: () => [
+    "-d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+    '--data-urlencode "client_assertion=$CLIENT_ASSERTION"',
+  ],
+};
+
+export function CurlSnippet({ tokenEndpoint, clientId, authMethod, grants }: Props) {
   const [copied, setCopied] = useState(false);
   const [index, setIndex] = useState(0);
   const selectId = useId();
@@ -18,7 +32,7 @@ export function CurlSnippet({ tokenEndpoint, clientId, grants }: Props) {
   const scopes = grant?.scopes.map((s) => s.name) ?? [];
   const lines = [
     `curl -X POST ${tokenEndpoint}`,
-    `-u ${clientId}:$CLIENT_SECRET`,
+    ...AUTH_LINES[authMethod](clientId),
     "-d grant_type=client_credentials",
     ...(resource ? [`-d resource=${encodeURIComponent(resource)}`] : []),
     ...(scopes.length ? [`-d scope="${scopes.join(" ")}"`] : []),
