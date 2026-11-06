@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,9 +34,9 @@ jobs:
       KEY_ENCRYPTION_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       CORS_ORIGINS: http://localhost:5173
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -44,3 +48,44 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/handsal_test
       - run: pnpm test
       - run: pnpm build
+
+  smoke:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMPOSE: docker compose -f docker-compose.prod.yml -f scripts/docker-compose.ci.yml
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - run: docker build -t handsal:ci .
+      - name: Write .env
+        run: |
+          {
+            echo "NODE_ENV=production"
+            echo "PUBLIC_URL=https://ci.example.test"
+            echo "KEY_ENCRYPTION_SECRET=$(openssl rand -hex 32)"
+            echo "ADMIN_API_KEY=$(openssl rand -hex 32)"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+            echo "BOOTSTRAP_ADMIN_EMAIL=ci@example.test"
+            echo "BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)"
+            echo "TRUST_PROXY=true"
+            echo "CORS_ORIGINS=https://ci.example.test"
+          } > .env
+      - run: $COMPOSE up -d --wait
+      - name: Wait for /ready
+        run: |
+          for _ in $(seq 60); do
+            [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ready)" = 200 ] && exit 0
+            sleep 1
+          done
+          echo "/ready did not return 200 within 60s" >&2
+          exit 1
+      - name: Smoke test
+        run: |
+          ADMIN_API_KEY="$(grep '^ADMIN_API_KEY=' .env | cut -d= -f2)" \
+          HANDSAL_URL=http://localhost:3000 PUBLIC_URL=https://ci.example.test bash scripts/smoke.sh
+      - name: Logs and teardown
+        if: always()
+        run: |
+          $COMPOSE logs --tail=100
+          $COMPOSE down -v

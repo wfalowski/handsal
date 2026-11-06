@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# End-to-end smoke test against a running Handsal instance. See scripts/README.md.
+set -euo pipefail
+
+BASE="${HANDSAL_URL:-http://localhost:3000}"
+BASE="${BASE%/}"
+: "${ADMIN_API_KEY:?ADMIN_API_KEY is required}"
+AUD="https://smoke.example/api"
+SLUG="smoke-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
+TENANT_ID=""
+PASS=0
+STATUS=""
+BODY=""
+
+fail() {
+  echo "FAIL: $*" >&2
+  [ -n "$BODY" ] && echo "  last response (HTTP $STATUS): $BODY" >&2
+  exit 1
+}
+ok() { PASS=$((PASS + 1)); echo "ok: $*"; }
+
+# req METHOD URL [curl args...] -> sets STATUS and BODY; never aborts on non-2xx.
+req() {
+  local method="$1" url="$2" out
+  shift 2
+  out=$(curl -sS -X "$method" -w $'\n%{http_code}' "$@" "$url") || fail "curl failed: $method $url"
+  STATUS="${out##*$'\n'}"
+  BODY="${out%$'\n'*}"
+}
+expect() { [ "$STATUS" = "$1" ] || fail "$2: expected HTTP $1, got $STATUS"; }
+eq() { [ "$1" = "$2" ] || fail "$3: expected '$2', got '$1'"; }
+adm() { local method="$1" path="$2"; shift 2; req "$method" "$BASE$path" -H "Authorization: Bearer $ADMIN_API_KEY" "$@"; }
+admj() { local method="$1" path="$2" data="$3"; adm "$method" "$path" -H "Content-Type: application/json" -d "$data"; }
+
+cleanup() {
+  local code=$?
+  trap - EXIT
+  if [ -n "$TENANT_ID" ]; then
+    admj DELETE "/api/tenants/$TENANT_ID" "{\"confirmSlug\":\"$SLUG\"}" || true
+    if [ "$STATUS" = "204" ]; then
+      echo "ok: cleanup deleted tenant $SLUG"
+    else
+      echo "WARN: cleanup of tenant $SLUG failed (HTTP $STATUS): $BODY" >&2
+    fi
+  fi
+  if [ "$code" -eq 0 ]; then
+    echo "smoke: PASSED ($PASS checks ok, 0 failed)"
+  else
+    echo "smoke: FAILED ($PASS checks ok before the failure)" >&2
+  fi
+  exit "$code"
+}
+trap cleanup EXIT
+
+b64url_decode() {
+  local s="${1//-/+}"
+  s="${s//_//}"
+  while [ $((${#s} % 4)) -ne 0 ]; do s="$s="; done
+  printf '%s' "$s" | base64 -d
+}
+
+# --- health ---
+req GET "$BASE/health"; expect 200 "GET /health"; ok "health"
+req GET "$BASE/ready"; expect 200 "GET /ready"; ok "ready"
+
+# --- management setup ---
+admj POST /api/tenants "{\"name\":\"Smoke $SLUG\",\"slug\":\"$SLUG\"}"
+expect 201 "create tenant (is ADMIN_API_KEY correct?)"
+TENANT_ID=$(jq -er .id <<<"$BODY") || fail "tenant id missing"
+ok "created tenant $SLUG ($TENANT_ID)"
+
+T="/api/tenants/$TENANT_ID"
+admj POST "$T/resources" "{\"name\":\"Smoke API\",\"kind\":\"api\",\"audience\":\"$AUD\"}"
+expect 201 "create resource"
+RES_ID=$(jq -er .id <<<"$BODY") || fail "resource id missing"
+ok "created resource $AUD"
+
+SCOPE_IDS=()
+for s in smoke:read smoke:write; do
+  admj POST "$T/resources/$RES_ID/scopes" "{\"name\":\"$s\"}"
+  expect 201 "create scope $s"
+  SCOPE_IDS+=("$(jq -er .id <<<"$BODY")") || fail "scope id missing"
+  ok "created scope $s"
+done
+
+admj POST "$T/applications" '{"name":"Smoke App","tokenEndpointAuthMethod":"client_secret_basic"}'
+expect 201 "create application"
+APP_ID=$(jq -er .application.id <<<"$BODY") || fail "application id missing"
+CLIENT_ID=$(jq -er .application.clientId <<<"$BODY") || fail "clientId missing"
+CLIENT_SECRET=$(jq -er .clientSecret <<<"$BODY") || fail "clientSecret missing"
+ok "created application $CLIENT_ID"
+
+admj PUT "$T/applications/$APP_ID/grants" "$(jq -nc --arg a "${SCOPE_IDS[0]}" --arg b "${SCOPE_IDS[1]}" '{scopeIds:[$a,$b]}')"
+expect 200 "put grants"
+eq "$(jq '[.grants[].scopes[]] | length' <<<"$BODY")" 2 "grant count"
+ok "granted 2 scopes"
+
+# --- discovery + jwks ---
+ISS="$BASE/t/$SLUG"
+EXP="${PUBLIC_URL:-$BASE}/t/$SLUG"  # expected issuer; differs from ISS when PUBLIC_URL != HANDSAL_URL
+req GET "$ISS/.well-known/openid-configuration"; expect 200 "discovery"
+eq "$(jq -r .issuer <<<"$BODY")" "$ISS" "discovery issuer"
+eq "$(jq -r .token_endpoint <<<"$BODY")" "$ISS/oauth/token" "discovery token_endpoint"
+eq "$(jq -r .jwks_uri <<<"$BODY")" "$ISS/.well-known/jwks.json" "discovery jwks_uri"
+ok "discovery issuer/token_endpoint/jwks_uri match"
+
+req GET "$ISS/.well-known/jwks.json"; expect 200 "jwks"
+eq "$(jq '[.keys[] | select(.kty=="EC" and .crv=="P-256")] | length > 0' <<<"$BODY")" true "jwks has EC P-256 key"
+eq "$(jq '[.keys[] | has("d")] | any' <<<"$BODY")" false "jwks exposes private key (d)"
+ok "jwks has EC P-256 key(s), no private material"
+
+# --- token ---
+# token SECRET RESOURCE SCOPE
+token() { req POST "$ISS/oauth/token" -u "$CLIENT_ID:$1" -d grant_type=client_credentials --data-urlencode "resource=$2" --data-urlencode "scope=$3"; }
+token "$CLIENT_SECRET" "$AUD" smoke:read
+expect 200 "token"
+eq "$(jq -r .token_type <<<"$BODY")" Bearer "token_type"
+jq -e '.expires_in > 0' <<<"$BODY" >/dev/null || fail "expires_in not > 0"
+eq "$(jq -r .scope <<<"$BODY")" smoke:read "response scope"
+JWT=$(jq -er .access_token <<<"$BODY") || fail "access_token missing"
+PAYLOAD=$(b64url_decode "$(cut -d. -f2 <<<"$JWT")") || fail "cannot decode JWT payload"
+eq "$(jq -r .aud <<<"$PAYLOAD")" "$AUD" "jwt aud"
+eq "$(jq -r .iss <<<"$PAYLOAD")" "$ISS" "jwt iss"
+eq "$(jq -r .client_id <<<"$PAYLOAD")" "$CLIENT_ID" "jwt client_id"
+eq "$(jq -r .tenant <<<"$PAYLOAD")" "$SLUG" "jwt tenant"
+eq "$(jq -r .scope <<<"$PAYLOAD")" smoke:read "jwt scope"
+eq "$(jq -r .client_kind <<<"$PAYLOAD")" service "jwt client_kind"
+JTI=$(jq -er .jti <<<"$PAYLOAD") || fail "jwt jti missing"
+ok "issued Bearer token; claims aud/iss/client_id/tenant/scope/client_kind verified"
+
+# --- introspect / revoke ---
+form() { req POST "$ISS/oauth/$1" -u "$CLIENT_ID:$CLIENT_SECRET" --data-urlencode "token=$JWT"; }
+form introspect; expect 200 "introspect"
+eq "$(jq -r .active <<<"$BODY")" true "introspect active"
+eq "$(jq -r .jti <<<"$BODY")" "$JTI" "introspect jti"
+ok "introspect active=true, jti matches"
+form revoke; expect 200 "revoke"; ok "revoked token"
+form introspect; expect 200 "introspect after revoke"
+eq "$(jq -r .active <<<"$BODY")" false "introspect active after revoke"
+ok "introspect active=false after revoke"
+
+# --- negative checks ---
+token wrong-secret "$AUD" smoke:read
+expect 401 "wrong secret"; eq "$(jq -r .error <<<"$BODY")" invalid_client "wrong secret error"
+ok "wrong secret -> 401 invalid_client"
+token "$CLIENT_SECRET" https://unknown.example/api smoke:read
+expect 400 "unknown resource"; eq "$(jq -r .error <<<"$BODY")" invalid_target "unknown resource error"
+ok "unknown resource -> 400 invalid_target"
+token "$CLIENT_SECRET" "$AUD" smoke:admin
+expect 400 "scope not granted"; eq "$(jq -r .error <<<"$BODY")" invalid_scope "scope not granted error"
+ok "scope not granted -> 400 invalid_scope"

@@ -97,10 +97,11 @@ ok "granted 2 scopes"
 
 # --- discovery + jwks ---
 ISS="$BASE/t/$SLUG"
+EXP="${PUBLIC_URL:-$BASE}/t/$SLUG"  # expected issuer; differs from ISS when PUBLIC_URL != HANDSAL_URL
 req GET "$ISS/.well-known/openid-configuration"; expect 200 "discovery"
-eq "$(jq -r .issuer <<<"$BODY")" "$ISS" "discovery issuer"
-eq "$(jq -r .token_endpoint <<<"$BODY")" "$ISS/oauth/token" "discovery token_endpoint"
-eq "$(jq -r .jwks_uri <<<"$BODY")" "$ISS/.well-known/jwks.json" "discovery jwks_uri"
+eq "$(jq -r .issuer <<<"$BODY")" "$EXP" "discovery issuer"
+eq "$(jq -r .token_endpoint <<<"$BODY")" "$EXP/oauth/token" "discovery token_endpoint"
+eq "$(jq -r .jwks_uri <<<"$BODY")" "$EXP/.well-known/jwks.json" "discovery jwks_uri"
 ok "discovery issuer/token_endpoint/jwks_uri match"
 
 req GET "$ISS/.well-known/jwks.json"; expect 200 "jwks"
@@ -119,7 +120,7 @@ eq "$(jq -r .scope <<<"$BODY")" smoke:read "response scope"
 JWT=$(jq -er .access_token <<<"$BODY") || fail "access_token missing"
 PAYLOAD=$(b64url_decode "$(cut -d. -f2 <<<"$JWT")") || fail "cannot decode JWT payload"
 eq "$(jq -r .aud <<<"$PAYLOAD")" "$AUD" "jwt aud"
-eq "$(jq -r .iss <<<"$PAYLOAD")" "$ISS" "jwt iss"
+eq "$(jq -r .iss <<<"$PAYLOAD")" "$EXP" "jwt iss"
 eq "$(jq -r .client_id <<<"$PAYLOAD")" "$CLIENT_ID" "jwt client_id"
 eq "$(jq -r .tenant <<<"$PAYLOAD")" "$SLUG" "jwt tenant"
 eq "$(jq -r .scope <<<"$PAYLOAD")" smoke:read "jwt scope"

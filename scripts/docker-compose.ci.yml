@@ -1,0 +1,5 @@
+# CI/local smoke override: run the locally built image instead of the GHCR one.
+#   docker compose -f docker-compose.prod.yml -f scripts/docker-compose.ci.yml up -d --wait
+services:
+  handsal:
+    image: handsal:ci
