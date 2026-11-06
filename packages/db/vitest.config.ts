@@ -5,8 +5,10 @@ import { defineConfig } from "vitest/config";
 const url =
   process.env.TEST_DATABASE_URL ?? "postgresql://handsal:handsal_dev@localhost:5434/handsal_test";
 const dbName = new URL(url).pathname.slice(1);
-if (!dbName.endsWith("_test")) {
-  throw new Error(`TEST_DATABASE_URL must name a database ending in _test (got "${dbName}")`);
+if (!/_test(_[a-z0-9]+)?$/.test(dbName)) {
+  throw new Error(
+    `TEST_DATABASE_URL must name a database matching _test or _test_<suffix> (got "${dbName}")`,
+  );
 }
 
 export default defineConfig({

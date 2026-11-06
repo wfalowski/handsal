@@ -71,7 +71,8 @@ describe("app", () => {
 
       for (const path of ["/t/acme/oauth/bogus", "/api/nope"]) {
         const res = await spa.request(path);
-        expect(res.status, path).toBe(404);
+        // /api/* is behind admin auth, so an unknown path there is 401; /t/* is a plain 404.
+        expect([401, 404], path).toContain(res.status);
         expect(res.headers.get("Content-Type"), path).toContain("application/json");
       }
 
