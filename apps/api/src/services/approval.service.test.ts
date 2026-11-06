@@ -160,7 +160,7 @@ describe("approval requests", () => {
     await decideApproval(s.tenant.id, approvalId, "approved", actor);
     await db.delete(adminUsers).where(eq(adminUsers.id, user.id));
     const list = await listApprovals(s.tenant.id, { status: "resolved", limit: 50 });
-    expect(list.items[0].decidedBy?.label).toBe("Jane Admin");
+    expect(list.items[0].decidedBy).toEqual({ kind: "user", label: "Jane Admin" });
   });
 
   it("mixed auto and approval scopes go pending as a whole", async () => {

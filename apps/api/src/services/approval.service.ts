@@ -227,10 +227,13 @@ function toDto({
   if (deciderName !== null) decidedBy = { kind: "user", label: a.decidedByLabel ?? deciderName };
   else if (a.decidedByRuleId !== null)
     decidedBy = { kind: "rule", label: a.decidedByLabel ?? `rule: ${ruleScopeName}` };
-  // No surviving user or rule id: the ADMIN_API_KEY actor, or a deleted user / rule (kind then
-  // reads "api-key", but the stored label keeps who decided). Expiry never sets decided_at.
-  else if (a.decidedAt !== null)
-    decidedBy = { kind: "api-key", label: a.decidedByLabel ?? "API key" };
+  // No surviving user or rule id: the ADMIN_API_KEY actor, or a deleted user / rule whose stored
+  // label still says who decided (rule labels start with "rule: "). Expiry never sets decided_at.
+  else if (a.decidedAt !== null) {
+    const label = a.decidedByLabel ?? "API key";
+    const kind = label === "API key" ? "api-key" : label.startsWith("rule: ") ? "rule" : "user";
+    decidedBy = { kind, label };
+  }
   return {
     id: a.id,
     applicationId: a.applicationId,
