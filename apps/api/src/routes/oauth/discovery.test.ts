@@ -29,7 +29,7 @@ describe("discovery", () => {
       introspection_endpoint: `${BASE}/t/acme/oauth/introspect`,
       revocation_endpoint: `${BASE}/t/acme/oauth/revoke`,
       jwks_uri: `${BASE}/t/acme/.well-known/jwks.json`,
-      grant_types_supported: ["client_credentials"],
+      grant_types_supported: ["client_credentials", "urn:handsal:params:grant-type:approval"],
       token_endpoint_auth_methods_supported: AUTH,
       introspection_endpoint_auth_methods_supported: AUTH,
       revocation_endpoint_auth_methods_supported: AUTH,

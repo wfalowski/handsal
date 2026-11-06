@@ -13,10 +13,13 @@ import {
 } from "../test/factories.js";
 import type { ApplicationCreateInput } from "./application.service.js";
 import type { AuthenticatedApplication } from "./client-auth.service.js";
-import { issueToken } from "./token.service.js";
+import { issueToken as issueAny, type TokenResponse } from "./token.service.js";
 
 const AUD = "https://api.acme.io/payments";
 const ctx = { sourceIp: "203.0.113.7" };
+// Existing cases never hit an approval scope.
+const issueToken = (...args: Parameters<typeof issueAny>) =>
+  issueAny(...args) as Promise<TokenResponse>;
 
 async function setup(resourceOver: { status?: "active" | "disabled" } = {}) {
   const tenant = await createTenant();
@@ -152,7 +155,8 @@ describe("agent guardrails", () => {
     const { tenant, app } = await agentSetup();
     const corrupt = { ...app, allowedCidrs: ["10.40.0.0/99"] };
     const res = await reasonOf(issueToken(tenant, corrupt, { audience: AUD }, ctx));
-    expect(res.reason).toBe("cidr_denied");
+    // Distinct reason: config corruption, not an off-network agent; same OAuth error.
+    expect(res).toEqual({ code: "unauthorized_client", status: 400, reason: "cidr_invalid" });
   });
 
   it("scope ceiling: N scopes pass, N+1 are invalid_scope; omitted scope counts the whole grant", async () => {

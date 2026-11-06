@@ -1,4 +1,5 @@
 import { db, scopes } from "@handsal/db";
+import { GRANT_TYPES } from "@handsal/shared";
 import { eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import type { AppEnv } from "../../app.js";
@@ -24,7 +25,7 @@ export function createDiscoveryRoutes() {
       ...(tenant.introspectionEnabled && { introspection_endpoint: `${issuer}/oauth/introspect` }),
       revocation_endpoint: `${issuer}/oauth/revoke`,
       jwks_uri: `${issuer}/.well-known/jwks.json`,
-      grant_types_supported: ["client_credentials"],
+      grant_types_supported: [GRANT_TYPES.CLIENT_CREDENTIALS, GRANT_TYPES.APPROVAL],
       token_endpoint_auth_methods_supported: AUTH_METHODS,
       introspection_endpoint_auth_methods_supported: AUTH_METHODS,
       revocation_endpoint_auth_methods_supported: AUTH_METHODS,

@@ -1,5 +1,12 @@
 // Integration test: real Postgres through the full app.
-import { db, runMigrations, tokenEvents } from "@handsal/db";
+import {
+  approvalRequests,
+  db,
+  runMigrations,
+  scopes as scopesTable,
+  tokenEvents,
+} from "@handsal/db";
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -486,6 +493,25 @@ describe("private_key_jwt client authentication", () => {
     expect((await events())[0].applicationClientId).toBe(application.clientId);
   });
 
+  it("oversized assertion → 400 invalid_request before auth, its jti stays unused", async () => {
+    const { tenant, sign, fields } = await pkSetup();
+    const jti = "fixed-jti";
+    const big = await sign({ jti, pad: "x".repeat(4096) });
+    const res = await formRequest(
+      app,
+      tokenUrl(tenant.slug),
+      await fields({ client_assertion: big }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("invalid_request");
+    const ok = await formRequest(
+      app,
+      tokenUrl(tenant.slug),
+      await fields({ client_assertion: await sign({ jti }) }),
+    );
+    expect(ok.status).toBe(200);
+  });
+
   it("the same assertion twice → 200 then 401 assertion_replayed", async () => {
     const { tenant, fields } = await pkSetup();
     const body = await fields();
@@ -554,5 +580,227 @@ describe("private_key_jwt client authentication", () => {
     expect(revoked.status).toBe(200);
     const after = await formRequest(app, `/t/${tenant.slug}/oauth/introspect`, await authFields());
     expect((await after.json()).active).toBe(false);
+  });
+});
+
+describe("task_id passthrough", () => {
+  it("claim present when sent, absent otherwise; stored on the event", async () => {
+    const { tenant, auth } = await setup();
+    const fields = { grant_type: "client_credentials", resource: PAYMENTS };
+    const withTask = await formRequest(
+      app,
+      tokenUrl(tenant.slug),
+      { ...fields, task_id: "run-42" },
+      auth,
+    );
+    expect(decodeJwt((await withTask.json()).access_token).task_id).toBe("run-42");
+    const without = await formRequest(app, tokenUrl(tenant.slug), fields, auth);
+    expect(decodeJwt((await without.json()).access_token)).not.toHaveProperty("task_id");
+    const rows = await db.select().from(tokenEvents).orderBy(tokenEvents.id);
+    expect(rows.map((r) => r.taskId)).toEqual(["run-42", null]);
+  });
+
+  it("task_id over 128 chars → invalid_request; a denied event keeps a truncated task_id", async () => {
+    const { tenant, auth } = await setup();
+    const long = "t".repeat(129);
+    const res = await formRequest(
+      app,
+      tokenUrl(tenant.slug),
+      { grant_type: "client_credentials", resource: PAYMENTS, task_id: long },
+      auth,
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("invalid_request");
+    const denied = await formRequest(
+      app,
+      tokenUrl(tenant.slug),
+      { grant_type: "client_credentials", resource: PAYMENTS, scope: "nope", task_id: "run-1" },
+      auth,
+    );
+    expect(denied.status).toBe(400);
+    const rows = await db.select().from(tokenEvents).orderBy(tokenEvents.id);
+    expect(rows.map((r) => [r.outcome, r.taskId])).toEqual([
+      ["denied", long.slice(0, 128)],
+      ["denied", "run-1"],
+    ]);
+  });
+});
+
+describe("approval grant", () => {
+  const APPROVAL = "urn:handsal:params:grant-type:approval";
+
+  /** Agent granted payments:read (auto) and payments:write (approval). */
+  async function agentSetup() {
+    const tenant = await createTenant();
+    const { application, clientSecret } = await createApplication(tenant.id, { kind: "agent" });
+    const { scopes } = await createResourceWithScopes(tenant.id, PAYMENTS, [
+      "payments:read",
+      "payments:write",
+    ]);
+    await db
+      .update(scopesTable)
+      .set({ agentPolicy: "approval" })
+      .where(eq(scopesTable.id, scopes[1].id));
+    await grant(
+      tenant.id,
+      application.id,
+      scopes.map((s) => s.id),
+    );
+    const auth = { Authorization: basic(application.clientId, clientSecret) };
+    const request = (fields: Record<string, string>) =>
+      formRequest(
+        app,
+        tokenUrl(tenant.slug),
+        { grant_type: "client_credentials", resource: PAYMENTS, ...fields },
+        auth,
+      );
+    const poll = (approvalId: string, headers = auth) =>
+      formRequest(
+        app,
+        tokenUrl(tenant.slug),
+        { grant_type: APPROVAL, approval_id: approvalId },
+        headers,
+      );
+    return { tenant, application, auth, request, poll };
+  }
+
+  async function approve(id: string) {
+    await db
+      .update(approvalRequests)
+      .set({ status: "approved", decidedAt: new Date() })
+      .where(eq(approvalRequests.id, id));
+  }
+
+  it("pending response carries approval_id and interval, with no-store headers", async () => {
+    const s = await agentSetup();
+    const res = await s.request({
+      scope: "payments:read payments:write",
+      task_id: "run-5",
+      actor_hint: "alice@example.com",
+      justification: "nightly refunds",
+    });
+    expect(res.status).toBe(400);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    expect(res.headers.get("Pragma")).toBe("no-cache");
+    const body = await res.json();
+    expect(body).toEqual({
+      error: "authorization_pending",
+      error_description: expect.any(String),
+      approval_id: expect.any(String),
+      interval: 5,
+    });
+    const [row] = await db.select().from(approvalRequests);
+    expect(row).toMatchObject({
+      id: body.approval_id,
+      scopes: ["payments:read", "payments:write"],
+      taskId: "run-5",
+      actorHint: "alice@example.com",
+      justification: "nightly refunds",
+    });
+    // One pending event, no denied event from the catch block.
+    expect((await events()).map((e) => e.outcome)).toEqual(["pending"]);
+
+    const polled = await s.poll(body.approval_id);
+    expect(polled.status).toBe(400);
+    expect(await polled.json()).toMatchObject({
+      error: "authorization_pending",
+      approval_id: body.approval_id,
+      interval: 5,
+    });
+  });
+
+  it("approved → one 300 s token with the row's scopes and task_id; second poll invalid_grant", async () => {
+    const s = await agentSetup();
+    const { approval_id } = await (
+      await s.request({ scope: "payments:write", task_id: "run-6" })
+    ).json();
+    await approve(approval_id);
+
+    const ok = await s.poll(approval_id);
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("Cache-Control")).toBe("no-store");
+    const body = await ok.json();
+    expect(body).toMatchObject({ token_type: "Bearer", expires_in: 300, scope: "payments:write" });
+    expect(decodeJwt(body.access_token)).toMatchObject({
+      aud: PAYMENTS,
+      scope: "payments:write",
+      task_id: "run-6",
+      client_kind: "agent",
+    });
+
+    const again = await s.poll(approval_id);
+    expect(again.status).toBe(400);
+    expect((await again.json()).error).toBe("invalid_grant");
+  });
+
+  it("concurrent double-poll issues exactly one token", async () => {
+    const s = await agentSetup();
+    const { approval_id } = await (await s.request({ scope: "payments:write" })).json();
+    await approve(approval_id);
+    const results = await Promise.all([s.poll(approval_id), s.poll(approval_id)]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+    const issued = (await events()).filter((e) => e.outcome === "issued");
+    expect(issued).toHaveLength(1);
+  });
+
+  it("denied → access_denied; expired → expired_token", async () => {
+    const s = await agentSetup();
+    const { approval_id: deniedId } = await (
+      await s.request({ scope: "payments:write", task_id: "a" })
+    ).json();
+    await db
+      .update(approvalRequests)
+      .set({ status: "denied" })
+      .where(eq(approvalRequests.id, deniedId));
+    expect((await (await s.poll(deniedId)).json()).error).toBe("access_denied");
+
+    const { approval_id: expiredId } = await (
+      await s.request({ scope: "payments:write", task_id: "b" })
+    ).json();
+    await db
+      .update(approvalRequests)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(approvalRequests.id, expiredId));
+    expect((await (await s.poll(expiredId)).json()).error).toBe("expired_token");
+  });
+
+  it("approval_id from another tenant or another application → invalid_grant", async () => {
+    const s = await agentSetup();
+    const { approval_id } = await (await s.request({ scope: "payments:write" })).json();
+    await approve(approval_id);
+
+    const otherTenant = await agentSetup();
+    const cross = await otherTenant.poll(approval_id);
+    expect(cross.status).toBe(400);
+    expect((await cross.json()).error).toBe("invalid_grant");
+
+    const sibling = await createApplication(s.tenant.id, { kind: "agent" });
+    const siblingAuth = {
+      Authorization: basic(sibling.application.clientId, sibling.clientSecret),
+    };
+    const stolen = await s.poll(approval_id, siblingAuth);
+    expect((await stolen.json()).error).toBe("invalid_grant");
+
+    // Still redeemable by its owner.
+    expect((await s.poll(approval_id)).status).toBe(200);
+  });
+
+  it("poll requires client auth and a valid approval_id", async () => {
+    const s = await agentSetup();
+    const noAuth = await formRequest(app, tokenUrl(s.tenant.slug), {
+      grant_type: APPROVAL,
+      approval_id: "00000000-0000-4000-8000-000000000000",
+    });
+    expect(noAuth.status).toBe(401);
+    const bad = await s.poll("not-a-uuid");
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toBe("invalid_request");
+  });
+
+  it("auto-only agent requests issue directly", async () => {
+    const s = await agentSetup();
+    const auto = await s.request({ scope: "payments:read" });
+    expect(auto.status).toBe(200);
+    expect(await db.select().from(approvalRequests)).toHaveLength(0);
   });
 });

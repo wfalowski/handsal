@@ -21,8 +21,7 @@ import {
 } from "../../services/application.service.js";
 import { getGrants } from "../../services/grant.service.js";
 import { getTenantById } from "../../services/tenant.service.js";
-import { countIssuedLastHour } from "../../services/token.service.js";
-import { listTokenEvents } from "../../services/token-event.service.js";
+import { countIssuedLastHour, listTokenEvents } from "../../services/token-event.service.js";
 import { applicationKeyRoutes } from "./application-keys.js";
 import { appIdParam, grantRoutes } from "./grants.js";
 

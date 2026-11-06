@@ -1,5 +1,7 @@
 import {
+  approvalGrantSchema,
   CLIENT_ASSERTION_TYPES,
+  DEFAULTS,
   GRANT_TYPES,
   OAUTH_ERRORS,
   tokenRequestSchema,
@@ -15,7 +17,7 @@ import {
   authenticateClient,
   authenticateClientAssertion,
 } from "../../services/client-auth.service.js";
-import { issueToken } from "../../services/token.service.js";
+import { issueToken, redeemApproval } from "../../services/token.service.js";
 import { recordTokenEvent } from "../../services/token-event.service.js";
 import { getClientIp } from "../../utils/client-ip.js";
 import { isFormUrlEncoded, parseBasicAuth } from "./helpers.js";
@@ -65,6 +67,10 @@ export async function authenticateFormClient(
     if (assertionType !== CLIENT_ASSERTION_TYPES.JWT_BEARER) {
       throw invalidRequest("Unsupported client_assertion_type");
     }
+    // Bound checked before auth: a post-auth failure would burn the assertion's jti.
+    if (!tokenRequestSchema.shape.client_assertion.safeParse(assertion).success) {
+      throw invalidRequest("client_assertion is too long");
+    }
     // RFC 6749 §2.3: a client must not use more than one authentication method.
     if (basic || body.client_secret !== undefined) {
       throw invalidRequest("Multiple client authentication methods");
@@ -98,7 +104,10 @@ function splitScopes(scope: string | undefined): string[] {
   return scope?.split(" ").filter(Boolean) ?? [];
 }
 
-/** `POST /t/:slug/oauth/token` (client_credentials). Limits are injectable for tests. */
+/**
+ * `POST /t/:slug/oauth/token` (client_credentials, approval polling). Limits are injectable for
+ * tests.
+ */
 export function createTokenRoutes({
   ipMax = env.RATE_LIMIT_TOKEN_IP_MAX,
   clientMax = env.RATE_LIMIT_TOKEN_CLIENT_MAX,
@@ -121,17 +130,41 @@ export function createTokenRoutes({
       const clientId =
         basic?.clientId ?? body?.client_id ?? assertionClientId(body?.client_assertion);
       let application: AuthenticatedApplication | undefined;
+      const pending = (approvalId: string) =>
+        c.json(
+          {
+            error: OAUTH_ERRORS.AUTHORIZATION_PENDING,
+            error_description: "Waiting for human approval of one or more requested scopes",
+            approval_id: approvalId,
+            interval: DEFAULTS.APPROVAL_POLL_INTERVAL_SECONDS,
+          },
+          400,
+        );
 
       try {
         if (!body) {
           throw invalidRequest("Content-Type must be application/x-www-form-urlencoded");
         }
         if (!body.grant_type) throw invalidRequest("grant_type is required");
-        if (body.grant_type !== GRANT_TYPES.CLIENT_CREDENTIALS) {
+        if (
+          body.grant_type !== GRANT_TYPES.CLIENT_CREDENTIALS &&
+          body.grant_type !== GRANT_TYPES.APPROVAL
+        ) {
           throw new OAuthError(OAUTH_ERRORS.UNSUPPORTED_GRANT_TYPE, 400, "Unsupported grant_type");
         }
 
         application = await authenticateFormClient(c);
+        c.header("Cache-Control", "no-store");
+        c.header("Pragma", "no-cache");
+
+        if (body.grant_type === GRANT_TYPES.APPROVAL) {
+          const grant = approvalGrantSchema.safeParse(body);
+          if (!grant.success) throw invalidRequest("approval_id is missing or invalid");
+          const response = await redeemApproval(tenant, application, grant.data.approval_id, {
+            sourceIp,
+          });
+          return "approvalId" in response ? pending(response.approvalId) : c.json(response);
+        }
 
         // A missing or malformed resource is invalid_target, not a generic schema failure.
         if (!tokenRequestSchema.shape.resource.safeParse(body.resource).success) {
@@ -149,12 +182,17 @@ export function createTokenRoutes({
         const response = await issueToken(
           tenant,
           application,
-          { audience: parsed.data.resource, requestedScopes: splitScopes(parsed.data.scope) },
+          {
+            audience: parsed.data.resource,
+            requestedScopes: splitScopes(parsed.data.scope),
+            taskId: parsed.data.task_id,
+            actorHint: parsed.data.actor_hint,
+            justification: parsed.data.justification,
+          },
           { sourceIp },
         );
-        c.header("Cache-Control", "no-store");
-        c.header("Pragma", "no-cache");
-        return c.json(response);
+        // Returned, not thrown: the body carries approval_id/interval and the event is `pending`.
+        return "approvalId" in response ? pending(response.approvalId) : c.json(response);
       } catch (err) {
         if (err instanceof OAuthError) {
           await recordTokenEvent({
@@ -166,6 +204,7 @@ export function createTokenRoutes({
             reason: (err.reason ?? err.errorCode).slice(0, 64),
             scopes: splitScopes(body?.scope),
             sourceIp: sourceIp.slice(0, 45),
+            taskId: body?.task_id?.slice(0, 128) ?? null,
           });
         }
         throw err;

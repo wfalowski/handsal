@@ -29,6 +29,34 @@ export async function recordTokenEvent(event: TokenEventInput): Promise<void> {
   }
 }
 
+/**
+ * Tokens issued to this application in the trailing hour, plus the seconds until the oldest of
+ * them leaves the window (1-3600; 1 when none).
+ */
+export async function countIssuedLastHour(
+  tenantId: string,
+  applicationId: string,
+): Promise<{ count: number; retryAfterSeconds: number }> {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      untilOldestExpires: sql<
+        number | null
+      >`ceil(extract(epoch from min(${tokenEvents.createdAt}) + interval '1 hour' - now()))::int`,
+    })
+    .from(tokenEvents)
+    .where(
+      and(
+        eq(tokenEvents.tenantId, tenantId),
+        eq(tokenEvents.applicationId, applicationId),
+        eq(tokenEvents.outcome, "issued"),
+        gte(tokenEvents.createdAt, sql`now() - interval '1 hour'`),
+      ),
+    );
+  const retryAfterSeconds = Math.min(3600, Math.max(1, row.untilOldestExpires ?? 1));
+  return { count: row.count, retryAfterSeconds };
+}
+
 // Microsecond-precision ISO string: `Date#toISOString` truncates to ms, which would make the
 // keyset skip rows sharing a millisecond.
 const createdAtText = sql<string>`to_char(${tokenEvents.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;

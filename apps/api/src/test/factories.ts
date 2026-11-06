@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   applicationGrants,
   applications,
+  approvalRequests,
   db,
   resources,
   scopes,
@@ -154,4 +155,26 @@ export async function signClientAssertion(
   })
     .setProtectedHeader({ alg: "ES256", kid: opts.kid, ...opts.header })
     .sign(privateKey);
+}
+
+/** An approval row for `appId` on `resourceId`; pending, expiring in 30 min unless overridden. */
+export async function createApprovalRequest(
+  tenantId: string,
+  appId: string,
+  resourceId: string,
+  over: Partial<typeof approvalRequests.$inferInsert> = {},
+) {
+  const [row] = await db
+    .insert(approvalRequests)
+    .values({
+      tenantId,
+      applicationId: appId,
+      resourceId,
+      audience: "https://api.acme.io/payments",
+      scopes: ["payments:read"],
+      expiresAt: new Date(Date.now() + 30 * 60_000),
+      ...over,
+    })
+    .returning();
+  return row;
 }

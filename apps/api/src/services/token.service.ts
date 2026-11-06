@@ -1,17 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { applications, db, scopes, tokenEvents } from "@handsal/db";
-import { OAUTH_ERRORS, TOKEN_TYPES } from "@handsal/shared";
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { applications, db, scopes } from "@handsal/db";
+import { DEFAULTS, OAUTH_ERRORS, TOKEN_TYPES } from "@handsal/shared";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { env } from "../env.js";
 import { OAuthError } from "../middleware/error-handler.js";
 import { ipInCidrs } from "../utils/cidr.js";
 import { signAccessToken } from "../utils/jwt.js";
 import { createLogger } from "../utils/logger.js";
+import { claimApproval, createApprovalRequest } from "./approval.service.js";
 import type { AuthenticatedApplication } from "./client-auth.service.js";
 import { getGrantedScopesForAudience } from "./grant.service.js";
 import { getActiveKey } from "./signing-key.service.js";
 import type { Tenant } from "./tenant.service.js";
-import { recordTokenEvent } from "./token-event.service.js";
+import { countIssuedLastHour, recordTokenEvent } from "./token-event.service.js";
 
 const logger = createLogger("token-service");
 
@@ -22,38 +23,15 @@ export interface TokenResponse {
   scope: string;
 }
 
+/** The request needs a human: the agent polls the token endpoint with this id. */
+export interface PendingApproval {
+  approvalId: string;
+}
+
 function deny(code: string, description: string, reason: string): never {
   const err = new OAuthError(code, 400, description);
   err.reason = reason;
   throw err;
-}
-
-/**
- * Tokens issued to this application in the trailing hour, plus the seconds until the oldest of
- * them leaves the window (1-3600; 1 when none).
- */
-export async function countIssuedLastHour(
-  tenantId: string,
-  applicationId: string,
-): Promise<{ count: number; retryAfterSeconds: number }> {
-  const [row] = await db
-    .select({
-      count: sql<number>`count(*)::int`,
-      untilOldestExpires: sql<
-        number | null
-      >`ceil(extract(epoch from min(${tokenEvents.createdAt}) + interval '1 hour' - now()))::int`,
-    })
-    .from(tokenEvents)
-    .where(
-      and(
-        eq(tokenEvents.tenantId, tenantId),
-        eq(tokenEvents.applicationId, applicationId),
-        eq(tokenEvents.outcome, "issued"),
-        gte(tokenEvents.createdAt, sql`now() - interval '1 hour'`),
-      ),
-    );
-  const retryAfterSeconds = Math.min(3600, Math.max(1, row.untilOldestExpires ?? 1));
-  return { count: row.count, retryAfterSeconds };
 }
 
 /** Agent guardrails (6.2): source CIDR, scope ceiling, hourly budget. No-op for services. */
@@ -65,12 +43,13 @@ async function enforceAgentGuardrails(
 ): Promise<void> {
   if (application.kind !== "agent") return;
 
-  let ipAllowed = false;
+  let ipAllowed: boolean;
   try {
     ipAllowed = ipInCidrs(sourceIp, application.allowedCidrs);
   } catch (err) {
-    // A corrupt stored CIDR fails closed.
+    // A corrupt stored CIDR fails closed, with its own reason so operators can tell it apart.
     logger.error({ err, tenantId: tenant.id, applicationId: application.id }, "Bad allowed_cidrs");
+    deny(OAUTH_ERRORS.UNAUTHORIZED_CLIENT, "Source address is not allowed", "cidr_invalid");
   }
   if (!ipAllowed) {
     deny(OAUTH_ERRORS.UNAUTHORIZED_CLIENT, "Source address is not allowed", "cidr_denied");
@@ -85,7 +64,7 @@ async function enforceAgentGuardrails(
   }
 
   if (application.tokenBudgetPerHour !== null) {
-    // shortcut: read is not serialised with the insert, so concurrent requests can overshoot by the in-flight count; a counter row would make it exact.
+    // shortcut: read is not serialised with the insert, so concurrent requests can overshoot by the in-flight count, and Retry-After then under-promises (only the oldest event ages out); a counter row would make both exact.
     const { count, retryAfterSeconds } = await countIssuedLastHour(tenant.id, application.id);
     if (count >= application.tokenBudgetPerHour) {
       const err = new OAuthError("too_many_requests", 429, "Hourly token budget exhausted");
@@ -96,13 +75,22 @@ async function enforceAgentGuardrails(
   }
 }
 
-/** Issue a client-credentials access token for an already authenticated application. */
+/**
+ * Issue a client-credentials access token for an already authenticated application, or open a
+ * human approval when an agent asks for an `approval` scope.
+ */
 export async function issueToken(
   tenant: Tenant,
   application: AuthenticatedApplication,
-  request: { audience: string; requestedScopes?: string[]; taskId?: string },
+  request: {
+    audience: string;
+    requestedScopes?: string[];
+    taskId?: string;
+    actorHint?: string;
+    justification?: string;
+  },
   ctx: { sourceIp: string },
-): Promise<TokenResponse> {
+): Promise<TokenResponse | PendingApproval> {
   if (tenant.status === "paused") {
     deny(OAUTH_ERRORS.INVALID_REQUEST, "tenant paused", "tenant_paused");
   }
@@ -120,47 +108,136 @@ export async function issueToken(
   }
   const tokenScopes = requested ?? scopeNames;
 
+  // Guardrails first: a request that would fail anyway never reaches the human queue.
+  await enforceAgentGuardrails(tenant, application, tokenScopes, ctx.sourceIp);
+
   if (application.kind === "agent") {
-    const [forbidden] = await db
-      .select({ name: scopes.name })
+    const policies = await db
+      .select({ agentPolicy: scopes.agentPolicy })
       .from(scopes)
       .where(
         and(
           eq(scopes.tenantId, tenant.id),
           eq(scopes.resourceId, resource.id),
           inArray(scopes.name, tokenScopes),
-          eq(scopes.agentPolicy, "never"),
         ),
-      )
-      .limit(1);
-    if (forbidden) {
+      );
+    if (policies.some((p) => p.agentPolicy === "never")) {
       deny(
         OAUTH_ERRORS.INVALID_SCOPE,
         "Requested scope is not available to agents",
         "invalid_scope",
       );
     }
+    // Mixed requests go pending as a whole: one token carries one scope string.
+    if (policies.some((p) => p.agentPolicy === "approval")) {
+      const approvalId = await createApprovalRequest(
+        tenant,
+        application,
+        {
+          resourceId: resource.id,
+          audience: request.audience,
+          scopes: tokenScopes,
+          actorHint: request.actorHint,
+          taskId: request.taskId,
+          justification: request.justification,
+        },
+        ctx,
+      );
+      return { approvalId };
+    }
   }
-
-  await enforceAgentGuardrails(tenant, application, tokenScopes, ctx.sourceIp);
 
   const ttl =
     application.tokenTtlSeconds ?? resource.tokenTtlSeconds ?? tenant.defaultTokenTtlSeconds;
+  return signAndRecord(
+    tenant,
+    application,
+    {
+      resourceId: resource.id,
+      audience: request.audience,
+      scopes: tokenScopes,
+      ttl,
+      taskId: request.taskId,
+    },
+    ctx,
+  );
+}
+
+/**
+ * Redeem an approval (grant_type `urn:handsal:params:grant-type:approval`): exactly one
+ * 300 s token per approved row. Unknown, foreign-tenant and other-application ids are all
+ * `invalid_grant`.
+ */
+export async function redeemApproval(
+  tenant: Tenant,
+  application: AuthenticatedApplication,
+  approvalId: string,
+  ctx: { sourceIp: string },
+): Promise<TokenResponse | PendingApproval> {
+  if (tenant.status === "paused") {
+    deny(OAUTH_ERRORS.INVALID_REQUEST, "tenant paused", "tenant_paused");
+  }
+  const { claimed, current } = await claimApproval(tenant.id, application.id, approvalId);
+  if (!claimed) {
+    if (!current || (current.status === "approved" && current.consumedAt)) {
+      deny(OAUTH_ERRORS.INVALID_GRANT, "Unknown or already used approval", "invalid_grant");
+    }
+    if (current.status === "denied") {
+      deny(OAUTH_ERRORS.ACCESS_DENIED, "The approval was denied", "approval_denied");
+    }
+    if (current.status === "expired" || current.expiresAt <= new Date()) {
+      deny(OAUTH_ERRORS.EXPIRED_TOKEN, "The approval has expired", "approval_expired");
+    }
+    return { approvalId: current.id };
+  }
+
+  // A grant revoked or a resource disabled during the window voids the approval.
+  // shortcut: signing failures after the claim burn the approval; avoids a transaction held across key ops.
+  const granted = await getGrantedScopesForAudience(tenant.id, application.id, claimed.audience);
+  if (
+    granted?.resource.status !== "active" ||
+    granted.resource.id !== claimed.resourceId ||
+    claimed.scopes.some((s) => !granted.scopeNames.includes(s))
+  ) {
+    deny(OAUTH_ERRORS.INVALID_GRANT, "Approved scopes are no longer granted", "invalid_grant");
+  }
+  return signAndRecord(
+    tenant,
+    application,
+    {
+      resourceId: claimed.resourceId,
+      audience: claimed.audience,
+      scopes: claimed.scopes,
+      ttl: DEFAULTS.APPROVAL_TOKEN_TTL_SECONDS,
+      taskId: claimed.taskId ?? undefined,
+    },
+    ctx,
+  );
+}
+
+/** Sign the access token, record the `issued` event and touch `last_token_at`. */
+async function signAndRecord(
+  tenant: Tenant,
+  application: AuthenticatedApplication,
+  t: { resourceId: string; audience: string; scopes: string[]; ttl: number; taskId?: string },
+  ctx: { sourceIp: string },
+): Promise<TokenResponse> {
   const iat = Math.floor(Date.now() / 1000);
-  const exp = iat + ttl;
+  const exp = iat + t.ttl;
   const jti = randomUUID();
-  const scope = tokenScopes.join(" ");
+  const scope = t.scopes.join(" ");
 
   const { kid, privateKeyPem } = await getActiveKey(tenant.id);
   const accessToken = await signAccessToken(privateKeyPem, kid, {
     iss: `${env.PUBLIC_URL}/t/${tenant.slug}`,
     sub: application.clientId,
     client_id: application.clientId,
-    aud: request.audience,
+    aud: t.audience,
     scope,
     tenant: tenant.slug,
     client_kind: application.kind,
-    ...(request.taskId && { task_id: request.taskId }),
+    ...(t.taskId && { task_id: t.taskId }),
     jti,
     iat,
     exp,
@@ -170,14 +247,14 @@ export async function issueToken(
     tenantId: tenant.id,
     applicationId: application.id,
     applicationClientId: application.clientId,
-    resourceId: resource.id,
-    audience: request.audience,
+    resourceId: t.resourceId,
+    audience: t.audience,
     outcome: "issued",
-    scopes: tokenScopes,
+    scopes: t.scopes,
     jti,
     expiresAt: new Date(exp * 1000),
     sourceIp: ctx.sourceIp.slice(0, 45),
-    taskId: request.taskId ?? null,
+    taskId: t.taskId ?? null,
   });
   try {
     await db
@@ -192,5 +269,5 @@ export async function issueToken(
     );
   }
 
-  return { access_token: accessToken, token_type: TOKEN_TYPES.BEARER, expires_in: ttl, scope };
+  return { access_token: accessToken, token_type: TOKEN_TYPES.BEARER, expires_in: t.ttl, scope };
 }
