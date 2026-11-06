@@ -16,7 +16,11 @@ function decision(a: ApprovalDto) {
 function decidedBy(a: ApprovalDto) {
   if (!a.decidedBy) return "—";
   const { kind, label } = a.decidedBy;
-  return kind === "rule" ? `rule: ${label}` : kind === "api-key" ? `API key: ${label}` : label;
+  return kind === "rule"
+    ? `Auto-approved · ${label}`
+    : kind === "api-key"
+      ? `API key: ${label}`
+      : label;
 }
 
 // The DTO has no consumed_at, so the "consumed" column from the brief is not rendered.

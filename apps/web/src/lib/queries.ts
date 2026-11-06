@@ -386,6 +386,8 @@ export type TenantPatch = {
   introspectionEnabled?: boolean;
   keyRotationDays?: number | null;
   externalIdp?: TenantDto["externalIdp"];
+  approvalWebhookUrl?: string | null;
+  approvalWebhookSecret?: string | null;
 };
 
 export function useTenant(tenantId: string) {

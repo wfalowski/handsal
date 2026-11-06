@@ -5,6 +5,7 @@ export const SETTINGS_SECTIONS = [
   { id: "signing-keys", label: "Signing keys" },
   { id: "token-defaults", label: "Token defaults" },
   { id: "external-idp", label: "External IdP" },
+  { id: "approval-webhook", label: "Approvals" },
   { id: "members", label: "Members" },
   { id: "danger", label: "Danger zone" },
 ] as const;

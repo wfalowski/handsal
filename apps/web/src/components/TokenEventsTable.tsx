@@ -20,6 +20,7 @@ const REASONS: Record<string, string> = {
   unknown_assertion_key: "unknown assertion key",
   assertion_expired: "client assertion expired",
   assertion_replayed: "client assertion replayed",
+  assertion_not_yet_valid: "client assertion not yet valid",
 };
 const TONES = {
   issued: "success",

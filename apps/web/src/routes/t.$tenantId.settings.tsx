@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
+import { ApprovalWebhookForm } from "../components/ApprovalWebhookForm";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { DangerZone } from "../components/DangerZone";
@@ -151,6 +152,13 @@ function SettingsPage() {
           </Section>
           <Section id="external-idp" title="External identity provider">
             <ExternalIdpForm key={JSON.stringify(t.externalIdp)} tenant={t} canEdit={canEdit} />
+          </Section>
+          <Section id="approval-webhook" title="Approval notifications">
+            <ApprovalWebhookForm
+              key={`${t.approvalWebhookUrl}|${t.approvalWebhookSecretSet}`}
+              tenant={t}
+              canEdit={canEdit}
+            />
           </Section>
           <Section id="members" title="Members">
             <MembersTable tenantId={tenantId} canEdit={isOwner} />
