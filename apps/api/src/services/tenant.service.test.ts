@@ -11,7 +11,8 @@ import {
   tokenEvents,
 } from "@handsal/db";
 import { count, eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { env } from "../env.js";
 import { ApiError } from "../middleware/error-handler.js";
 import {
   addMember,
@@ -167,6 +168,33 @@ describe("deleteTenant", () => {
     };
     expect((await updateTenant(t.id, { externalIdp: idp })).externalIdp).toEqual(idp);
     expect((await updateTenant(t.id, { externalIdp: null })).externalIdp).toBeNull();
+  });
+
+  it("internal jwksUri / webhook destinations → 400 validation_error in production", async () => {
+    const t = await createTenantRow();
+    const idp = { issuer: "https://i.example.com", audience: "a" };
+    const prev = env.NODE_ENV;
+    env.NODE_ENV = "production";
+    onTestFinished(() => {
+      env.NODE_ENV = prev;
+    });
+    expect(
+      (await updateTenant(t.id, { approvalWebhookUrl: "https://hooks.example.com/x" }))
+        .approvalWebhookUrl,
+    ).toBe("https://hooks.example.com/x");
+    for (const input of [
+      { externalIdp: { ...idp, jwksUri: "https://10.0.0.1/" } },
+      { externalIdp: { ...idp, jwksUri: "https://[::1]/jwks" } },
+      { externalIdp: { ...idp, jwksUri: "https://[::ffff:192.168.1.1]/jwks" } },
+      { externalIdp: { ...idp, jwksUri: "https://169.254.169.254/latest" } },
+      { externalIdp: { ...idp, jwksUri: "https://metadata.google.internal/" } },
+      { approvalWebhookUrl: "http://localhost:8080/hook" },
+      { approvalWebhookUrl: "https://printer.local/hook" },
+      { approvalWebhookUrl: "https://[fd12::1]/hook" },
+    ]) {
+      const err = await apiErrorOf(updateTenant(t.id, input));
+      expect([err.statusCode, err.errorCode]).toEqual([400, "validation_error"]);
+    }
   });
 
   it("wrong confirmSlug → 400 confirm_slug_mismatch", async () => {

@@ -22,7 +22,7 @@ export const tokenExchangeSchema = z.object({
   subject_token: z.string().min(1).max(8192),
   subject_token_type: z.enum([TOKEN_TYPE_URNS.ACCESS_TOKEN, TOKEN_TYPE_URNS.JWT]),
   resource: z.string().min(1).max(512),
-  scope: z.string().optional(),
+  scope: z.string().max(4096).optional(),
   task_id: z.string().regex(TASK_ID_REGEX).optional(),
   actor_token: z.never().optional(),
   actor_token_type: z.never().optional(),

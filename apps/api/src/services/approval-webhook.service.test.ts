@@ -1,7 +1,7 @@
 // Integration test: real Postgres + a local Hono receiver on an ephemeral port.
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { applications, approvalRequests, db, runMigrations, scopes } from "@handsal/db";
+import { applications, approvalRequests, db, runMigrations, scopes, tenants } from "@handsal/db";
 import type { ApprovalDto } from "@handsal/shared";
 import { serve } from "@hono/node-server";
 import { eq } from "drizzle-orm";
@@ -46,7 +46,9 @@ afterAll(() => {
 
 async function tenantWithWebhook(url: string, secret: string | null = SECRET) {
   const t = await createTenant();
-  await updateTenant(t.id, { approvalWebhookUrl: url, approvalWebhookSecret: secret });
+  await updateTenant(t.id, { approvalWebhookSecret: secret });
+  // Loopback receiver: written directly, past updateTenant's internal-address guard.
+  await db.update(tenants).set({ approvalWebhookUrl: url }).where(eq(tenants.id, t.id));
   const tenant = await getTenantById(t.id);
   if (!tenant) throw new Error("tenant missing");
   return tenant;

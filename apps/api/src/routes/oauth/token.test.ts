@@ -921,6 +921,8 @@ describe("token exchange grant", () => {
       error: "invalid_request",
       error_description: "actor_token is not supported",
     });
+    const noResource = await s.exchange({ actor_token: "x", resource: "" });
+    expect((await noResource.json()).error).toBe("invalid_request");
   });
 
   it("unknown subject_token_type → invalid_request", async () => {

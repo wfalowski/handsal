@@ -271,6 +271,8 @@ export async function redeemApproval(
 /** Delegation (RFC 8693): the token's `sub` is the subject, `act` names the acting agent chain. */
 export interface Delegation {
   sub: string;
+  /** Emitted as `sub_kind`: "user" | "service" | "agent". */
+  subKind: string;
   act: Record<string, unknown>;
 }
 
@@ -305,7 +307,7 @@ export async function signAndRecord(
     tenant: tenant.slug,
     client_kind: application.kind,
     ...(t.taskId && { task_id: t.taskId }),
-    ...(t.delegation && { act: t.delegation.act }),
+    ...(t.delegation && { act: t.delegation.act, sub_kind: t.delegation.subKind }),
     jti,
     iat,
     exp,

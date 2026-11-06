@@ -271,14 +271,97 @@ describe("exchangeToken", () => {
   });
 
   it("agent subject rejected when may_act_for is services only → unauthorized_client", async () => {
-    const { tenant, agent, subject } = await setup();
-    const first = await exchangeToken(tenant, agent, { subjectToken: subject, audience: AUD }, ctx);
+    const { tenant, agent } = await setup();
+    const own = (await issueToken(tenant, agent, { audience: AUD }, ctx)) as TokenResponse;
     const narrow = await newApp(tenant.id, { kind: "agent", mayActFor: ["services"] }, []);
     expect(
       await reasonOf(
-        exchangeToken(tenant, narrow, { subjectToken: first.access_token, audience: AUD }, ctx),
+        exchangeToken(tenant, narrow, { subjectToken: own.access_token, audience: AUD }, ctx),
       ),
     ).toEqual({ code: "unauthorized_client", status: 400 });
+  });
+
+  it("user-originated delegated token cannot be re-exchanged without users (two hops)", async () => {
+    const { tenant, agent, scopes: s } = await setup();
+    const idp = await signIdpToken({ scope: "tickets:read" });
+    const first = await exchangeToken(tenant, agent, { subjectToken: idp, audience: AUD }, ctx);
+    const second = await newApp(tenant.id, { kind: "agent", mayActFor: ["tenant", "services"] }, [
+      s[0].id,
+    ]);
+    expect(
+      await reasonOf(
+        exchangeToken(tenant, second, { subjectToken: first.access_token, audience: AUD }, ctx),
+      ),
+    ).toEqual({ code: "unauthorized_client", status: 400 });
+  });
+
+  it("sub_kind is set from the subject and sticky across re-exchanges", async () => {
+    const { tenant, agent, subject } = await setup();
+    const first = await exchangeToken(tenant, agent, { subjectToken: subject, audience: AUD }, ctx);
+    expect(decodeJwt(first.access_token).sub_kind).toBe("service");
+    const second = await exchangeToken(
+      tenant,
+      agent,
+      { subjectToken: first.access_token, audience: AUD },
+      ctx,
+    );
+    expect(decodeJwt(second.access_token).sub_kind).toBe("service");
+    const own = (await issueToken(tenant, agent, { audience: AUD }, ctx)) as TokenResponse;
+    const fromAgent = await exchangeToken(
+      tenant,
+      agent,
+      { subjectToken: own.access_token, audience: AUD },
+      ctx,
+    );
+    expect(decodeJwt(fromAgent.access_token).sub_kind).toBe("agent");
+    const idp = await signIdpToken({ scope: "tickets:read" });
+    const fromUser = await exchangeToken(tenant, agent, { subjectToken: idp, audience: AUD }, ctx);
+    expect(decodeJwt(fromUser.access_token).sub_kind).toBe("user");
+  });
+
+  it("an external IdP's act is not copied into the issued chain", async () => {
+    const { tenant, agent } = await setup();
+    const idp = await signIdpToken({ scope: "tickets:read", act: { sub: "svc_payments" } });
+    const res = await exchangeToken(tenant, agent, { subjectToken: idp, audience: AUD }, ctx);
+    expect(decodeJwt(res.access_token).act).toEqual({ sub: agent.clientId });
+  });
+
+  it("act chain deeper than 3 → invalid_grant", async () => {
+    const { tenant, agent, subject } = await setup();
+    let token = subject;
+    for (let i = 0; i < 3; i++) {
+      token = (await exchangeToken(tenant, agent, { subjectToken: token, audience: AUD }, ctx))
+        .access_token;
+    }
+    expect(
+      await reasonOf(exchangeToken(tenant, agent, { subjectToken: token, audience: AUD }, ctx)),
+    ).toEqual({ code: "invalid_grant", status: 400 });
+  });
+
+  it("Handsal subject for another resource → invalid_grant, even with a shared scope name", async () => {
+    const { tenant, agent, subject } = await setup();
+    const other = "https://api.acme.io/payroll";
+    const { scopes: payroll } = await createResourceWithScopes(tenant.id, other, ["tickets:read"]);
+    await grant(tenant.id, agent.id, [payroll[0].id]);
+    expect(
+      await reasonOf(exchangeToken(tenant, agent, { subjectToken: subject, audience: other }, ctx)),
+    ).toEqual({ code: "invalid_grant", status: 400 });
+  });
+
+  it("external JWT without exp → invalid_grant", async () => {
+    const { tenant, agent } = await setup();
+    const token = await signIdpToken({ scope: "tickets:read", exp: undefined });
+    expect(decodeJwt(token).exp).toBeUndefined();
+    expect(
+      await reasonOf(exchangeToken(tenant, agent, { subjectToken: token, audience: AUD }, ctx)),
+    ).toEqual({ code: "invalid_grant", status: 400 });
+  });
+
+  it("accepts scope as an array from an external IdP", async () => {
+    const { tenant, agent } = await setup();
+    const token = await signIdpToken({ scope: ["tickets:read"] });
+    const res = await exchangeToken(tenant, agent, { subjectToken: token, audience: AUD }, ctx);
+    expect(res.scope).toBe("tickets:read");
   });
 
   it("non-agent application or empty may_act_for → unauthorized_client", async () => {
@@ -292,9 +375,11 @@ describe("exchangeToken", () => {
   });
 
   it("foreign resource → invalid_target", async () => {
-    const { tenant, agent, subject } = await setup();
+    const { tenant, agent } = await setup();
     const other = await createTenant();
     await createResourceWithScopes(other.id, "https://api.other.io", ["x:read"]);
+    // External subject: a Handsal subject would already fail the aud pin (invalid_grant).
+    const subject = await signIdpToken({ scope: "x:read" });
     expect(
       await reasonOf(
         exchangeToken(
@@ -313,6 +398,36 @@ describe("exchangeToken", () => {
     expect(
       await reasonOf(exchangeToken(tenant, agent, { subjectToken: subject, audience: AUD }, ctx)),
     ).toEqual({ code: "invalid_scope", status: 400 });
+  });
+
+  it("never scope → invalid_scope", async () => {
+    const { tenant, agent, subject, scopes: s } = await setup();
+    await db.update(scopes).set({ agentPolicy: "never" }).where(eq(scopes.id, s[0].id));
+    expect(
+      await reasonOf(exchangeToken(tenant, agent, { subjectToken: subject, audience: AUD }, ctx)),
+    ).toEqual({ code: "invalid_scope", status: 400 });
+  });
+
+  it("agent guardrails apply (max scopes per token, hourly budget)", async () => {
+    const capped = await setup({
+      agent: { delegationScopeMode: "agent_only", maxScopesPerToken: 1 },
+    });
+    expect(
+      await reasonOf(
+        exchangeToken(
+          capped.tenant,
+          capped.agent,
+          { subjectToken: capped.subject, audience: AUD },
+          ctx,
+        ),
+      ),
+    ).toEqual({ code: "invalid_scope", status: 400 });
+
+    const { tenant, agent, subject } = await setup({ agent: { tokenBudgetPerHour: 1 } });
+    await exchangeToken(tenant, agent, { subjectToken: subject, audience: AUD }, ctx);
+    expect(
+      await reasonOf(exchangeToken(tenant, agent, { subjectToken: subject, audience: AUD }, ctx)),
+    ).toEqual({ code: "too_many_requests", status: 429 });
   });
 
   it("agent guardrails apply (source CIDR)", async () => {

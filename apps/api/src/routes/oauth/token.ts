@@ -179,6 +179,12 @@ export function createTokenRoutes({
           return "approvalId" in response ? pending(response) : c.json(response);
         }
 
+        if (
+          body.grant_type === GRANT_TYPES.TOKEN_EXCHANGE &&
+          (body.actor_token !== undefined || body.actor_token_type !== undefined)
+        ) {
+          throw invalidRequest("actor_token is not supported");
+        }
         // A missing or malformed resource is invalid_target, not a generic schema failure.
         if (!tokenRequestSchema.shape.resource.safeParse(body.resource).success) {
           const err = new OAuthError(
@@ -190,9 +196,6 @@ export function createTokenRoutes({
           throw err;
         }
         if (body.grant_type === GRANT_TYPES.TOKEN_EXCHANGE) {
-          if (body.actor_token !== undefined || body.actor_token_type !== undefined) {
-            throw invalidRequest("actor_token is not supported");
-          }
           const exchange = tokenExchangeSchema.safeParse(body);
           if (!exchange.success) {
             const badType = exchange.error.issues.some((i) => i.path[0] === "subject_token_type");

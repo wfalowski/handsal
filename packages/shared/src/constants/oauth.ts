@@ -76,6 +76,10 @@ export type ApprovalStatus = (typeof APPROVAL_STATUSES)[keyof typeof APPROVAL_ST
 export const MAY_ACT_FOR = { USERS: "users", TENANT: "tenant", SERVICES: "services" } as const;
 export type MayActFor = (typeof MAY_ACT_FOR)[keyof typeof MAY_ACT_FOR];
 
+/** `sub_kind` claim of an exchanged token: where the subject chain originated. */
+export const SUB_KINDS = { USER: "user", SERVICE: "service", AGENT: "agent" } as const;
+export type SubKind = (typeof SUB_KINDS)[keyof typeof SUB_KINDS];
+
 export const DELEGATION_SCOPE_MODES = {
   INTERSECTION: "intersection",
   AGENT_ONLY: "agent_only",

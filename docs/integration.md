@@ -434,11 +434,11 @@ When an agent acts on behalf of someone, the resource server should see both who
 |---|---|
 | `users` | JWTs of the tenant's external IdP (your login provider), see below |
 | `services` | Handsal access tokens issued to `service` applications of this tenant |
-| `tenant` | Any Handsal access token of this tenant, agents included; a token that already has an `act` keeps it, nested under the new one |
+| `tenant` | Any Handsal access token of this tenant, agents included, except tokens whose chain started with a user (`sub_kind=user` needs `users`); a token that already has an `act` keeps it, nested under the new one (at most 3 levels) |
 
-An empty list (the default) disables exchange for the application. The application also needs a grant on the target `resource`.
+An empty list (the default) disables exchange for the application. The application also needs a grant on the target `resource`, and a Handsal subject token must have been issued for that same `resource` (`aud`); it cannot be rebound to another API.
 
-**Scopes.** `delegationScopeMode` decides what the new token may carry. `intersection` (default): only scopes that the agent is granted on the target resource and that the subject token itself carries (`scope` string or `scp` array), so the agent never does more than the subject. `agent_only`: the agent's grants, whatever the subject had; use it when the subject token comes from an IdP that knows nothing about your API's scopes. A `scope` parameter can narrow the result further. Scopes with `agent_policy` `never` or `approval` are refused in an exchange (`invalid_scope`); for `approval` the agent requests them with a normal request and the [approval flow](#7-human-approval-for-agent-scopes). Guardrails apply as always.
+**Scopes.** `delegationScopeMode` decides what the new token may carry. `intersection` (default): only scopes that the agent is granted on the target resource and that the subject token itself carries (`scope` string or `scp` array), so the agent never does more than the subject. `agent_only`: the agent's grants, whatever the subject had; use it when the subject token comes from an IdP that knows nothing about your API's scopes. IdP scope names are matched by name against the agent's scopes on the target resource, so name them as that resource does. A `scope` parameter can narrow the result further. Scopes with `agent_policy` `never` or `approval` are refused in an exchange (`invalid_scope`); for `approval` the agent requests them with a normal request and the [approval flow](#7-human-approval-for-agent-scopes). Guardrails apply as always.
 
 **External IdP.** To accept user tokens, set the tenant's `externalIdp` (Settings, or `PATCH /api/tenants/$TENANT_ID`):
 
@@ -448,7 +448,7 @@ curl -s -X PATCH -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: app
   https://auth.example.com/api/tenants/$TENANT_ID
 ```
 
-Handsal checks the signature against `jwksUri` (https only, keys cached), `iss` = `issuer`, `aud` contains `audience`, `exp` (60 s tolerance), and requires a `sub`. One IdP per tenant; `null` removes it.
+Handsal checks the signature against `jwksUri` (https only, no internal addresses, redirects not followed, keys cached; `RS256`, `PS256`, `ES256`, `ES384` or `EdDSA`), `iss` = `issuer`, `aud` contains `audience`, `exp` (required, 5 s tolerance), and requires a `sub`. An `act` claim in the IdP token is ignored. One IdP per tenant; `null` removes it.
 
 **Exchange:**
 
@@ -473,8 +473,11 @@ curl -s https://auth.example.com/t/acme/oauth/token \
 | Claim | Meaning |
 |---|---|
 | `sub` | The subject: the user's ID at your IdP, or the `client_id` of the service whose token was exchanged. Use it as the identity for authorization and audit |
+| `sub_kind` | What `sub` is: `user` (from your IdP), `service` or `agent` (a Handsal `client_id`). It stays the same when an exchanged token is exchanged again |
 | `act.sub` | The agent that is acting (its `client_id`). A nested `act.act` is an earlier actor in the chain; the most recent is outermost |
 | `client_id` | Always the agent application that holds the token |
 | `scope`, `aud` | What was granted and for which API, as usual |
+
+A token with `act` present is delegated: authorize on `sub` + `sub_kind` + `act.sub`, never on `sub` alone. An IdP user ID can look like a Handsal `client_id`, and only `sub_kind` tells them apart.
 
 Treat the pair as "`sub`, via the agent `act.sub`". A token without `act` is a direct token (`sub` equals `client_id`). Log both. Do not authorize on `act` alone, and do not assume `sub` is a Handsal client when it comes from an external IdP. Exchanged tokens are independent tokens: introspect and revoke them like any other.

@@ -1,3 +1,4 @@
+import { BlockList, isIP } from "node:net";
 import { applications, db, resources, tenantMembers, tenants, tokenEvents } from "@handsal/db";
 import type {
   TenantDto,
@@ -175,7 +176,8 @@ async function updateOne(
 
 export async function updateTenant(tenantId: string, input: TenantUpdateInput): Promise<TenantDto> {
   const { approvalWebhookSecret, ...rest } = input;
-  if (rest.approvalWebhookUrl) assertWebhookUrl(rest.approvalWebhookUrl);
+  if (rest.approvalWebhookUrl) assertOutboundUrl(rest.approvalWebhookUrl, "approvalWebhookUrl");
+  if (rest.externalIdp) assertOutboundUrl(rest.externalIdp.jwksUri, "externalIdp.jwksUri");
   // Empty PATCH still bumps updated_at (Drizzle rejects an empty SET).
   return updateOne(tenantId, {
     ...rest,
@@ -190,17 +192,61 @@ export async function updateTenant(tenantId: string, input: TenantUpdateInput): 
   });
 }
 
-/** Outbound destination control: https only in production (http allowed for local development). */
-function assertWebhookUrl(url: string): void {
-  const { protocol } = new URL(url);
-  if (protocol === "https:" || (protocol === "http:" && env.NODE_ENV !== "production")) return;
-  throw new ApiError(
-    400,
-    "validation_error",
-    env.NODE_ENV === "production"
-      ? "approvalWebhookUrl must use https"
-      : "approvalWebhookUrl must use http or https",
+// Loopback, link-local, RFC 1918 and unique-local ranges (IPv4-mapped IPv6 is checked against v4).
+const internalNets = new BlockList();
+for (const [net, prefix] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.168.0.0", 16],
+] as const) {
+  internalNets.addSubnet(net, prefix, "ipv4");
+}
+for (const [net, prefix] of [
+  ["::", 128],
+  ["::1", 128],
+  ["fe80::", 10],
+  ["fc00::", 7],
+] as const) {
+  internalNets.addSubnet(net, prefix, "ipv6");
+}
+
+function isInternalHost(hostname: string): boolean {
+  const host = hostname
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "")
+    .toLowerCase();
+  const family = isIP(host);
+  if (family) return internalNets.check(host, family === 4 ? "ipv4" : "ipv6");
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".internal") ||
+    host.endsWith(".local")
   );
+}
+
+/**
+ * Outbound destination control for URLs the server fetches: https only in production (http allowed
+ * for local development); in production never a literal internal address or internal-only hostname.
+ * shortcut: checks the URL, not the resolved address; a public name resolving to an internal IP
+ * (or DNS rebinding) passes; resolve-and-pin at fetch time if that threat matters.
+ */
+function assertOutboundUrl(url: string, field: string): void {
+  const { protocol, hostname } = new URL(url);
+  if (protocol !== "https:" && !(protocol === "http:" && env.NODE_ENV !== "production")) {
+    throw new ApiError(
+      400,
+      "validation_error",
+      env.NODE_ENV === "production" ? `${field} must use https` : `${field} must use http or https`,
+    );
+  }
+  // Outside production local webhooks / IdPs are legitimate (same reasoning as the http allowance).
+  if (env.NODE_ENV === "production" && isInternalHost(hostname)) {
+    throw new ApiError(400, "validation_error", `${field} must not point at an internal address`);
+  }
 }
 
 export async function setTenantStatus(
