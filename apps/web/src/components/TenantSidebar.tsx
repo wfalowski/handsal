@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { initials, tenantTint } from "../lib/format";
-import { useJwksHealth, useLogout } from "../lib/queries";
+import { useApprovalCounts, useJwksHealth, useLogout } from "../lib/queries";
 import type { MeTenant, MeUser } from "../lib/types";
 
 type Props = { tenant: MeTenant; user: MeUser };
@@ -42,6 +42,16 @@ const NAV = [
     ),
   },
   {
+    to: "/t/$tenantId/approvals",
+    label: "Approvals",
+    icon: (
+      <>
+        <path d="M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6l8-3z" />
+        <path d="M9 12l2 2 4-4" />
+      </>
+    ),
+  },
+  {
     to: "/t/$tenantId/settings",
     label: "Settings",
     icon: (
@@ -59,6 +69,7 @@ const NAV_CLASS =
 export function TenantSidebar({ tenant, user }: Props) {
   const jwks = useJwksHealth(tenant);
   const logout = useLogout();
+  const pending = useApprovalCounts(tenant.id).data?.pending ?? 0;
   const navigate = useNavigate();
   const tint = tenantTint(tenant.slug);
   const healthy = jwks.data === true;
@@ -124,6 +135,12 @@ export function TenantSidebar({ tenant, user }: Props) {
               {item.icon}
             </svg>
             {item.label}
+            {item.to === "/t/$tenantId/approvals" && pending > 0 && (
+              <span className="ml-auto rounded-full bg-[#EEF1FF] px-[7px] font-semibold text-[#3730A3] text-[11px]">
+                {pending}
+                <span className="sr-only"> pending</span>
+              </span>
+            )}
           </Link>
         ))}
       </nav>

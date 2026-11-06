@@ -13,6 +13,13 @@ const REASONS: Record<string, string> = {
   auth_method_mismatch: "wrong auth method",
   tenant_paused: "tenant paused",
   invalid_client: "invalid client",
+  cidr_denied: "source IP not allowed",
+  scope_ceiling: "too many scopes requested",
+  budget_exhausted: "hourly token budget exhausted",
+  bad_assertion: "invalid client assertion",
+  unknown_assertion_key: "unknown assertion key",
+  assertion_expired: "client assertion expired",
+  assertion_replayed: "client assertion replayed",
 };
 const TONES = {
   issued: "success",
@@ -24,7 +31,7 @@ const LABELS = {
   issued: "Issued",
   denied: "Denied",
   revoked: "Revoked",
-  pending: "Pending",
+  pending: "Awaiting approval",
 } as const;
 
 function CopyJti({ jti }: { jti: string }) {
@@ -114,13 +121,15 @@ export function TokenEventsTable({
               </Td>
               <Td>{e.jti ? <CopyJti jti={e.jti} /> : "—"}</Td>
               <Td className="whitespace-nowrap text-right text-muted text-sm">
-                {e.outcome === "denied"
-                  ? e.reason
-                    ? (REASONS[e.reason] ?? e.reason)
-                    : "—"
-                  : e.expiresAt
-                    ? relativeTime(e.expiresAt)
-                    : "—"}
+                {e.outcome === "pending"
+                  ? "needs human approval"
+                  : e.outcome === "denied"
+                    ? e.reason
+                      ? (REASONS[e.reason] ?? e.reason)
+                      : "—"
+                    : e.expiresAt
+                      ? relativeTime(e.expiresAt)
+                      : "—"}
               </Td>
             </tr>
           );

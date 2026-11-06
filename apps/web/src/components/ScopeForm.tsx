@@ -7,13 +7,20 @@ import { Dialog } from "./Dialog";
 import { Input } from "./Input";
 import { useToast } from "./Toast";
 
+export const POLICY_LABELS = {
+  auto: "Auto",
+  approval: "Human approval",
+  never: "Never for agents",
+} as const;
+type Policy = keyof typeof POLICY_LABELS;
+
 type Props = {
   open: boolean;
   onClose: () => void;
   tenantId: string;
   resourceId: string;
   /** Prefills the form and switches it to edit mode. */
-  scope?: { id: string; name: string; description: string | null };
+  scope?: { id: string; name: string; description: string | null; agentPolicy: Policy };
 };
 
 export function ScopeForm(props: Props) {
@@ -34,6 +41,7 @@ function Fields({ onClose, tenantId, resourceId, scope }: Props) {
   const update = useUpdateScope(tenantId, resourceId);
   const [name, setName] = useState(scope?.name ?? "");
   const [description, setDescription] = useState(scope?.description ?? "");
+  const [agentPolicy, setAgentPolicy] = useState<Policy>(scope?.agentPolicy ?? "auto");
   const [taken, setTaken] = useState(false);
 
   const nameError = taken
@@ -55,8 +63,12 @@ function Fields({ onClose, tenantId, resourceId, scope }: Props) {
         else toast.error(err.message);
       },
     };
-    if (scope) update.mutate({ id: scope.id, body: { name, description: desc || null } }, handlers);
-    else create.mutate({ name, ...(desc ? { description: desc } : {}) }, handlers);
+    if (scope)
+      update.mutate(
+        { id: scope.id, body: { name, description: desc || null, agentPolicy } },
+        handlers,
+      );
+    else create.mutate({ name, agentPolicy, ...(desc ? { description: desc } : {}) }, handlers);
   }
 
   return (
@@ -82,6 +94,23 @@ function Fields({ onClose, tenantId, resourceId, scope }: Props) {
         autoComplete="off"
         onChange={(e) => setDescription(e.target.value)}
       />
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="scope-policy" className="font-medium text-[13px]">
+          Agent policy
+        </label>
+        <select
+          id="scope-policy"
+          value={agentPolicy}
+          onChange={(e) => setAgentPolicy(e.target.value as Policy)}
+          className="h-11 rounded-[10px] border border-line-strong bg-white pr-3 pl-3 text-sm focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-accent"
+        >
+          {(Object.keys(POLICY_LABELS) as Policy[]).map((p) => (
+            <option key={p} value={p}>
+              {POLICY_LABELS[p]}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onClose}>
           Cancel

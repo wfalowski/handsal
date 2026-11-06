@@ -3,7 +3,7 @@ import { type ResourceDetail, useDeleteScope } from "../lib/queries";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
 import { EmptyState } from "./EmptyState";
-import { ScopeForm } from "./ScopeForm";
+import { POLICY_LABELS, ScopeForm } from "./ScopeForm";
 import { Table, Td, Th } from "./Table";
 import { useToast } from "./Toast";
 
@@ -33,11 +33,12 @@ export function ScopeTable({ tenantId, resourceId, scopes, canEdit }: Props) {
           description="Scopes are the permissions applications can be granted on this resource."
         />
       ) : (
-        <Table minWidth={520}>
+        <Table minWidth={620}>
           <thead>
             <tr>
               <Th>Scope</Th>
               <Th>Description</Th>
+              <Th>Agent policy</Th>
               <Th className="text-right">Granted to</Th>
               {canEdit && (
                 <Th>
@@ -55,6 +56,7 @@ export function ScopeTable({ tenantId, resourceId, scopes, canEdit }: Props) {
                   </span>
                 </Td>
                 <Td className="text-body">{s.description ?? "—"}</Td>
+                <Td className="whitespace-nowrap text-body">{POLICY_LABELS[s.agentPolicy]}</Td>
                 <Td className="whitespace-nowrap text-right text-muted">
                   {s.grantedAppCount} apps
                 </Td>

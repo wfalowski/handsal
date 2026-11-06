@@ -1,6 +1,8 @@
 import type {
   ApplicationDto,
   ApplicationKeyDto,
+  ApprovalCountsDto,
+  ApprovalDto,
   MemberDto,
   ResourceDto,
   ScopeDto,
@@ -334,7 +336,11 @@ export type ResourceDetail = ResourceDto & {
 type ResourceInput = { name: string; kind?: "api" | "mcp"; audience: string };
 export type ResourceCreateBody = ResourceInput & { tokenTtlSeconds?: number };
 export type ResourceUpdateBody = Partial<ResourceInput> & { tokenTtlSeconds?: number | null };
-type ScopeBody = { name?: string; description?: string | null };
+type ScopeBody = {
+  name?: string;
+  description?: string | null;
+  agentPolicy?: ScopeDto["agentPolicy"];
+};
 
 export function useResources(tenantId: string) {
   return useQuery({
@@ -389,11 +395,13 @@ export function useDeleteResource(tenantId: string) {
 }
 
 export function useCreateScope(tenantId: string, resourceId: string) {
-  return useResourceMutation(tenantId, (body: { name: string; description?: string }) =>
-    api<ScopeDto>(`/api/tenants/${tenantId}/resources/${resourceId}/scopes`, {
-      method: "POST",
-      body,
-    }),
+  return useResourceMutation(
+    tenantId,
+    (body: { name: string; description?: string; agentPolicy?: ScopeDto["agentPolicy"] }) =>
+      api<ScopeDto>(`/api/tenants/${tenantId}/resources/${resourceId}/scopes`, {
+        method: "POST",
+        body,
+      }),
   );
 }
 
@@ -696,5 +704,46 @@ export function useDeleteApplicationKey(tenantId: string, appId: string) {
         method: "DELETE",
       }),
     onSuccess: invalidate,
+  });
+}
+
+// --- approvals (Task 6.3)
+type ApprovalList = { items: ApprovalDto[]; nextCursor: string | null; counts: ApprovalCountsDto };
+
+export function useApprovals(tenantId: string, status: "pending" | "resolved") {
+  return useInfiniteQuery({
+    queryKey: ["approvals", { tenantId, status }],
+    queryFn: ({ pageParam }) => {
+      const sp = new URLSearchParams({ status });
+      if (pageParam) sp.set("cursor", pageParam);
+      return api<ApprovalList>(`/api/tenants/${tenantId}/approvals?${sp}`);
+    },
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useApprovalCounts(tenantId: string) {
+  return useQuery({
+    queryKey: ["approval-counts", { tenantId }],
+    queryFn: () => api<ApprovalList>(`/api/tenants/${tenantId}/approvals?status=pending&limit=1`),
+    select: (d) => d.counts,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useDecideApproval(tenantId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; action: "approve" | "deny" }) =>
+      api<ApprovalDto>(`/api/tenants/${tenantId}/approvals/${v.id}/${v.action}`, {
+        method: "POST",
+      }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["approvals", { tenantId }] }),
+        queryClient.invalidateQueries({ queryKey: ["approval-counts", { tenantId }] }),
+      ]),
   });
 }

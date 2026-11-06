@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as TenantsRouteImport } from './routes/tenants'
 import { Route as TTenantIdRouteImport } from './routes/t.$tenantId'
 import { Route as TTenantIdApplicationsRouteImport } from './routes/t.$tenantId.applications'
+import { Route as TTenantIdApprovalsRouteImport } from './routes/t.$tenantId.approvals'
 import { Route as TTenantIdResourcesRouteImport } from './routes/t.$tenantId.resources'
 import { Route as TTenantIdSettingsRouteImport } from './routes/t.$tenantId.settings'
 import { Route as TTenantIdTokensRouteImport } from './routes/t.$tenantId.tokens'
@@ -44,6 +45,11 @@ const TTenantIdApplicationsRoute = TTenantIdApplicationsRouteImport.update({
   path: '/applications',
   getParentRoute: () => TTenantIdRoute,
 } as any)
+const TTenantIdApprovalsRoute = TTenantIdApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
+  getParentRoute: () => TTenantIdRoute,
+} as any)
 const TTenantIdResourcesRoute = TTenantIdResourcesRouteImport.update({
   id: '/resources',
   path: '/resources',
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/tenants': typeof TenantsRoute
   '/t/$tenantId': typeof TTenantIdRouteWithChildren
   '/t/$tenantId/applications': typeof TTenantIdApplicationsRouteWithChildren
+  '/t/$tenantId/approvals': typeof TTenantIdApprovalsRoute
   '/t/$tenantId/resources': typeof TTenantIdResourcesRoute
   '/t/$tenantId/settings': typeof TTenantIdSettingsRoute
   '/t/$tenantId/tokens': typeof TTenantIdTokensRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/tenants': typeof TenantsRoute
   '/t/$tenantId': typeof TTenantIdRouteWithChildren
   '/t/$tenantId/applications': typeof TTenantIdApplicationsRouteWithChildren
+  '/t/$tenantId/approvals': typeof TTenantIdApprovalsRoute
   '/t/$tenantId/resources': typeof TTenantIdResourcesRoute
   '/t/$tenantId/settings': typeof TTenantIdSettingsRoute
   '/t/$tenantId/tokens': typeof TTenantIdTokensRoute
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/tenants': typeof TenantsRoute
   '/t/$tenantId': typeof TTenantIdRouteWithChildren
   '/t/$tenantId/applications': typeof TTenantIdApplicationsRouteWithChildren
+  '/t/$tenantId/approvals': typeof TTenantIdApprovalsRoute
   '/t/$tenantId/resources': typeof TTenantIdResourcesRoute
   '/t/$tenantId/settings': typeof TTenantIdSettingsRoute
   '/t/$tenantId/tokens': typeof TTenantIdTokensRoute
@@ -108,6 +117,7 @@ export interface FileRouteTypes {
     | '/tenants'
     | '/t/$tenantId'
     | '/t/$tenantId/applications'
+    | '/t/$tenantId/approvals'
     | '/t/$tenantId/resources'
     | '/t/$tenantId/settings'
     | '/t/$tenantId/tokens'
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/tenants'
     | '/t/$tenantId'
     | '/t/$tenantId/applications'
+    | '/t/$tenantId/approvals'
     | '/t/$tenantId/resources'
     | '/t/$tenantId/settings'
     | '/t/$tenantId/tokens'
@@ -130,6 +141,7 @@ export interface FileRouteTypes {
     | '/tenants'
     | '/t/$tenantId'
     | '/t/$tenantId/applications'
+    | '/t/$tenantId/approvals'
     | '/t/$tenantId/resources'
     | '/t/$tenantId/settings'
     | '/t/$tenantId/tokens'
@@ -180,6 +192,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TTenantIdApplicationsRouteImport
       parentRoute: typeof TTenantIdRoute
     }
+    '/t/$tenantId/approvals': {
+      id: '/t/$tenantId/approvals'
+      path: '/approvals'
+      fullPath: '/t/$tenantId/approvals'
+      preLoaderRoute: typeof TTenantIdApprovalsRouteImport
+      parentRoute: typeof TTenantIdRoute
+    }
     '/t/$tenantId/resources': {
       id: '/t/$tenantId/resources'
       path: '/resources'
@@ -226,6 +245,7 @@ const TTenantIdApplicationsRouteWithChildren =
 
 interface TTenantIdRouteChildren {
   TTenantIdApplicationsRoute: typeof TTenantIdApplicationsRouteWithChildren
+  TTenantIdApprovalsRoute: typeof TTenantIdApprovalsRoute
   TTenantIdResourcesRoute: typeof TTenantIdResourcesRoute
   TTenantIdSettingsRoute: typeof TTenantIdSettingsRoute
   TTenantIdTokensRoute: typeof TTenantIdTokensRoute
@@ -233,6 +253,7 @@ interface TTenantIdRouteChildren {
 
 const TTenantIdRouteChildren: TTenantIdRouteChildren = {
   TTenantIdApplicationsRoute: TTenantIdApplicationsRouteWithChildren,
+  TTenantIdApprovalsRoute: TTenantIdApprovalsRoute,
   TTenantIdResourcesRoute: TTenantIdResourcesRoute,
   TTenantIdSettingsRoute: TTenantIdSettingsRoute,
   TTenantIdTokensRoute: TTenantIdTokensRoute,
