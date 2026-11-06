@@ -24,9 +24,8 @@ export const tokenEventDtoSchema = z.object({
   expiresAt: z.iso.datetime().nullable(),
   sourceIp: z.string().nullable(),
   createdAt: z.iso.datetime(),
-  // shortcut: optional until the API mapper emits them (Task 6.6 slice D); then drop `.optional()`.
-  taskId: z.string().nullable().optional(),
-  actorSub: z.string().nullable().optional(),
+  taskId: z.string().nullable(),
+  actorSub: z.string().nullable(),
 });
 
 const count = z.number().int().min(0);

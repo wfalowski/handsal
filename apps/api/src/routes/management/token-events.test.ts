@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { pool, runMigrations } from "@handsal/db";
+import { db, pool, runMigrations, tokenEvents } from "@handsal/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { app } from "../../app.js";
 import {
@@ -134,10 +134,45 @@ describe("token events", () => {
     }
   });
 
+  it("tasks: auditor gets {items} grouped per task, tenant-isolated; ?taskId filters the list", async () => {
+    const s = await setup();
+    const other = await createTenant();
+    await db.insert(tokenEvents).values([
+      { tenantId: s.tenant.id, outcome: "issued", taskId: "run_1", scopes: ["payments:read"] },
+      { tenantId: s.tenant.id, outcome: "denied", taskId: "run_1", actorSub: "user:9" },
+      { tenantId: s.tenant.id, outcome: "issued" },
+      { tenantId: other.id, outcome: "issued", taskId: "run_foreign" },
+    ]);
+
+    const res = await s.get("/token-events/tasks");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toEqual([
+      {
+        taskId: "run_1",
+        applicationId: null,
+        applicationClientId: null,
+        actorSub: "user:9",
+        scopes: ["payments:read"],
+        tokenCount: 2,
+        deniedCount: 1,
+        firstSeenAt: expect.stringMatching(/Z$/),
+        lastSeenAt: expect.stringMatching(/Z$/),
+      },
+    ]);
+
+    const list = await (await s.get("/token-events?taskId=run_1")).json();
+    expect(list.items).toHaveLength(2);
+    expect(list.items.every((e: { taskId: string }) => e.taskId === "run_1")).toBe(true);
+    expect((await (await s.get("/token-events?taskId=run_foreign")).json()).items).toEqual([]);
+  });
+
   it("invalid query → 400 validation_error", async () => {
     const s = await setup();
     for (const path of [
       "/token-events?limit=0",
+      "/token-events/tasks?limit=101",
+      "/token-events/tasks?applicationId=nope",
       `/applications/${randomUUID()}/token-events?limit=0`,
     ]) {
       const res = await s.get(path);

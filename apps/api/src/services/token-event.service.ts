@@ -1,5 +1,11 @@
 import { applications, db, tokenEvents } from "@handsal/db";
-import type { TokenEventDto, TokenStatsDto, tokenEventsQuerySchema } from "@handsal/shared";
+import type {
+  TaskSummaryDto,
+  TokenEventDto,
+  TokenStatsDto,
+  tasksQuerySchema,
+  tokenEventsQuerySchema,
+} from "@handsal/shared";
 import { and, count, desc, eq, gte, ilike, lt, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { ApiError } from "../middleware/error-handler.js";
@@ -9,6 +15,7 @@ const logger = createLogger("token-event-service");
 
 export type TokenEventInput = Omit<typeof tokenEvents.$inferInsert, "id" | "createdAt">;
 export type TokenEventsQuery = z.output<typeof tokenEventsQuerySchema>;
+export type TasksQuery = z.output<typeof tasksQuerySchema>;
 
 /** Insert one token event. Never throws: a failure is logged so the token request is unaffected. */
 export async function recordTokenEvent(event: TokenEventInput): Promise<void> {
@@ -51,6 +58,7 @@ export async function listTokenEvents(
   const conditions: (SQL | undefined)[] = [eq(tokenEvents.tenantId, tenantId)];
   if (query.outcome) conditions.push(eq(tokenEvents.outcome, query.outcome));
   if (query.applicationId) conditions.push(eq(tokenEvents.applicationId, query.applicationId));
+  if (query.taskId) conditions.push(eq(tokenEvents.taskId, query.taskId));
   if (query.since) conditions.push(gte(tokenEvents.createdAt, new Date(query.since)));
   if (query.q) {
     const q = escapeLike(query.q);
@@ -99,10 +107,59 @@ export async function listTokenEvents(
       expiresAt: e.expiresAt?.toISOString() ?? null,
       sourceIp: e.sourceIp,
       createdAt: e.createdAt.toISOString(),
+      taskId: e.taskId,
+      actorSub: e.actorSub,
     })),
     nextCursor:
       rows.length > query.limit && last ? encodeCursor(last.createdAtText, last.event.id) : null,
   };
+}
+
+/**
+ * Last-24 h activity grouped by `task_id`, most recently active first. The lateral unnest
+ * multiplies rows per scope, so counts use `count(distinct te.id)`.
+ */
+export async function listTasks(tenantId: string, query: TasksQuery): Promise<TaskSummaryDto[]> {
+  const result = await db.execute<{
+    task_id: string;
+    application_id: string | null;
+    application_client_id: string | null;
+    actor_sub: string | null;
+    token_count: number;
+    denied_count: number;
+    scopes: string[];
+    first_seen_at: Date | string;
+    last_seen_at: Date | string;
+  }>(sql`
+    select te.task_id,
+           max(te.application_id::text) as application_id,
+           max(te.application_client_id) as application_client_id,
+           max(te.actor_sub) as actor_sub,
+           count(distinct te.id)::int as token_count,
+           (count(distinct te.id) filter (where te.outcome = 'denied'))::int as denied_count,
+           coalesce(array_agg(distinct s.name) filter (where s.name is not null), '{}') as scopes,
+           min(te.created_at) as first_seen_at,
+           max(te.created_at) as last_seen_at
+    from token_events te
+    left join lateral unnest(te.scopes) as s(name) on true
+    where te.tenant_id = ${tenantId} and te.task_id is not null
+      and te.created_at >= now() - interval '24 hours'
+      and (${query.applicationId ?? null}::uuid is null or te.application_id = ${query.applicationId ?? null}::uuid)
+    group by te.task_id
+    order by max(te.created_at) desc
+    limit ${query.limit}
+  `);
+  return result.rows.map((r) => ({
+    taskId: r.task_id,
+    applicationId: r.application_id,
+    applicationClientId: r.application_client_id,
+    actorSub: r.actor_sub,
+    scopes: r.scopes,
+    tokenCount: r.token_count,
+    deniedCount: r.denied_count,
+    firstSeenAt: new Date(r.first_seen_at).toISOString(),
+    lastSeenAt: new Date(r.last_seen_at).toISOString(),
+  }));
 }
 
 /** Dashboard counters for the last 24 h (and the 24 h before, for the trend). */

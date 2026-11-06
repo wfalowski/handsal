@@ -6,6 +6,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApplication, createTenant, truncateAll } from "../test/factories.js";
 import {
   getTokenStats,
+  listTasks,
   listTokenEvents,
   purgeOldTokenEvents,
   recordTokenEvent,
@@ -124,6 +125,99 @@ describe("listTokenEvents", () => {
       statusCode: 400,
       errorCode: "invalid_cursor",
     });
+  });
+});
+
+describe("task activity", () => {
+  it("stores and emits taskId/actorSub, null when absent, and ?taskId filters exactly", async () => {
+    const tenant = await createTenant();
+    await recordTokenEvent({
+      tenantId: tenant.id,
+      outcome: "issued",
+      taskId: "run_01JBXA3K",
+      actorSub: "user:42",
+    });
+    await recordTokenEvent({ tenantId: tenant.id, outcome: "issued", taskId: "run_01JBXA3" });
+    await recordTokenEvent({ tenantId: tenant.id, outcome: "issued" });
+
+    const all = (await listTokenEvents(tenant.id, query())).items;
+    expect(all.map((e) => [e.taskId, e.actorSub])).toEqual([
+      [null, null],
+      ["run_01JBXA3", null],
+      ["run_01JBXA3K", "user:42"],
+    ]);
+    const filtered = (await listTokenEvents(tenant.id, query({ taskId: "run_01JBXA3K" }))).items;
+    expect(filtered.map((e) => e.taskId)).toEqual(["run_01JBXA3K"]);
+  });
+
+  it("groups a task: distinct counts, scope union, first/last seen, mixed outcomes", async () => {
+    const tenant = await createTenant();
+    const appId = randomUUID();
+    const base = { tenantId: tenant.id, applicationId: appId, applicationClientId: "app_agent" };
+    await db.insert(tokenEvents).values([
+      {
+        ...base,
+        outcome: "issued",
+        taskId: "t1",
+        actorSub: "user:7",
+        scopes: ["a", "b"],
+        createdAt: hoursAgo(3),
+      },
+      { ...base, outcome: "issued", taskId: "t1", scopes: ["b", "c"], createdAt: hoursAgo(2) },
+      { ...base, outcome: "denied", taskId: "t1", scopes: [], createdAt: hoursAgo(1) },
+      { ...base, outcome: "issued", scopes: ["z"], createdAt: hoursAgo(1) },
+    ]);
+
+    expect(await listTasks(tenant.id, { limit: 20 })).toEqual([
+      {
+        taskId: "t1",
+        applicationId: appId,
+        applicationClientId: "app_agent",
+        actorSub: "user:7",
+        scopes: ["a", "b", "c"],
+        tokenCount: 3,
+        deniedCount: 1,
+        firstSeenAt: expect.any(String),
+        lastSeenAt: expect.any(String),
+      },
+    ]);
+    const [t] = await listTasks(tenant.id, { limit: 20 });
+    expect(Date.parse(t.lastSeenAt) - Date.parse(t.firstSeenAt)).toBeCloseTo(2 * 3600_000, -3);
+  });
+
+  it("orders by last activity, honours applicationId and limit, drops events older than 24 h", async () => {
+    const tenant = await createTenant();
+    const [a, b] = [randomUUID(), randomUUID()];
+    const ev = (taskId: string, applicationId: string, createdAt: Date) => ({
+      tenantId: tenant.id,
+      outcome: "issued" as const,
+      taskId,
+      applicationId,
+      createdAt,
+    });
+    await db
+      .insert(tokenEvents)
+      .values([
+        ev("old", a, hoursAgo(5)),
+        ev("new", b, hoursAgo(1)),
+        ev("mid", a, hoursAgo(3)),
+        ev("old", a, hoursAgo(2)),
+        ev("stale", a, hoursAgo(25)),
+      ]);
+
+    const ids = async (q: { applicationId?: string; limit?: number }) =>
+      (await listTasks(tenant.id, { limit: 20, ...q })).map((t) => t.taskId);
+    expect(await ids({})).toEqual(["new", "old", "mid"]);
+    expect(await ids({ applicationId: a })).toEqual(["old", "mid"]);
+    expect(await ids({ limit: 1 })).toEqual(["new"]);
+  });
+
+  it("never returns another tenant's tasks", async () => {
+    const [tenantA, tenantB] = [await createTenant(), await createTenant()];
+    await recordTokenEvent({ tenantId: tenantB.id, outcome: "issued", taskId: "secret-task" });
+    await recordTokenEvent({ tenantId: tenantA.id, outcome: "issued", taskId: "mine" });
+    expect((await listTasks(tenantA.id, { limit: 20 })).map((t) => t.taskId)).toEqual(["mine"]);
+    expect((await listTokenEvents(tenantA.id, query({ taskId: "secret-task" }))).items).toEqual([]);
   });
 });
 
