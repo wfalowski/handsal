@@ -1,4 +1,7 @@
-export const GRANT_TYPES = { CLIENT_CREDENTIALS: "client_credentials" } as const;
+export const GRANT_TYPES = {
+  CLIENT_CREDENTIALS: "client_credentials",
+  APPROVAL: "urn:handsal:params:grant-type:approval",
+} as const;
 export const TOKEN_TYPES = { BEARER: "Bearer" } as const;
 export const OAUTH_ERRORS = {
   INVALID_REQUEST: "invalid_request",
@@ -10,6 +13,9 @@ export const OAUTH_ERRORS = {
   INVALID_TARGET: "invalid_target",
   SERVER_ERROR: "server_error",
   TEMPORARILY_UNAVAILABLE: "temporarily_unavailable",
+  AUTHORIZATION_PENDING: "authorization_pending",
+  ACCESS_DENIED: "access_denied",
+  EXPIRED_TOKEN: "expired_token",
 } as const;
 export type OAuthErrorCode = (typeof OAUTH_ERRORS)[keyof typeof OAUTH_ERRORS];
 
@@ -46,5 +52,14 @@ export const TOKEN_EVENT_OUTCOMES = {
   ISSUED: "issued",
   DENIED: "denied",
   REVOKED: "revoked",
+  PENDING: "pending",
 } as const;
 export type TokenEventOutcome = (typeof TOKEN_EVENT_OUTCOMES)[keyof typeof TOKEN_EVENT_OUTCOMES];
+
+export const APPROVAL_STATUSES = {
+  PENDING: "pending",
+  APPROVED: "approved",
+  DENIED: "denied",
+  EXPIRED: "expired",
+} as const;
+export type ApprovalStatus = (typeof APPROVAL_STATUSES)[keyof typeof APPROVAL_STATUSES];

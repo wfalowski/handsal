@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_ASSERTION_TYPES, CLIENT_ID_REGEX, DEFAULTS } from "../constants/index.js";
+import {
+  CLIENT_ASSERTION_TYPES,
+  CLIENT_ID_REGEX,
+  DEFAULTS,
+  GRANT_TYPES,
+} from "../constants/index.js";
 import {
   applicationCreateSchema,
   applicationKeyCreateSchema,
   applicationKeyRetireSchema,
   applicationUpdateSchema,
+  approvalCountsDtoSchema,
+  approvalDtoSchema,
+  approvalGrantSchema,
+  approvalsQuerySchema,
   grantsReplaceSchema,
   introspectRequestSchema,
   loginSchema,
@@ -220,6 +229,73 @@ describe("token events", () => {
     expect(tasksQuerySchema.parse({}).limit).toBe(20);
     expect(ok(tasksQuerySchema, { limit: "101" })).toBe(false);
     expect(ok(tokenEventsQuerySchema, { taskId: "x".repeat(129) })).toBe(false);
+  });
+});
+
+describe("approvals", () => {
+  const dto = {
+    id: "8d3c1f9e-2b4a-4c6d-9e8f-1a2b3c4d5e6f",
+    applicationId: "8d3c1f9e-2b4a-4c6d-9e8f-1a2b3c4d5e70",
+    applicationName: "agent",
+    clientId: "app_aaaaaaaaaaaaaaaaaaaa",
+    audience: "https://api.example",
+    scopes: ["x:write"],
+    actorHint: null,
+    taskId: null,
+    justification: null,
+    status: "pending",
+    expiresAt: "2026-11-06T12:30:00.000Z",
+    createdAt: "2026-11-06T12:00:00.000Z",
+    decidedAt: null,
+    decidedBy: null,
+  };
+  it("grant requires a uuid approval_id", () => {
+    expect(ok(approvalGrantSchema, { approval_id: dto.id })).toBe(true);
+    expect(ok(approvalGrantSchema, { approval_id: "nope" })).toBe(false);
+    expect(ok(approvalGrantSchema, {})).toBe(false);
+  });
+  it("token request accepts actor_hint and justification within limits", () => {
+    const base = { grant_type: "client_credentials", resource: "https://api" };
+    expect(ok(tokenRequestSchema, { ...base, actor_hint: "alice", justification: "why" })).toBe(
+      true,
+    );
+    expect(ok(tokenRequestSchema, { ...base, actor_hint: "a".repeat(256) })).toBe(false);
+    expect(ok(tokenRequestSchema, { ...base, justification: "j".repeat(2001) })).toBe(false);
+    expect(GRANT_TYPES.APPROVAL).toBe("urn:handsal:params:grant-type:approval");
+  });
+  it("query defaults and bounds", () => {
+    expect(approvalsQuerySchema.parse({})).toEqual({ status: "pending", limit: 50 });
+    expect(approvalsQuerySchema.parse({ status: "resolved", limit: "100" }).limit).toBe(100);
+    expect(ok(approvalsQuerySchema, { limit: "101" })).toBe(false);
+    expect(ok(approvalsQuerySchema, { status: "approved" })).toBe(false);
+    expect(ok(approvalsQuerySchema, { cursor: "c".repeat(257) })).toBe(false);
+  });
+  it("dto: decidedBy kinds and status enum", () => {
+    expect(ok(approvalDtoSchema, dto)).toBe(true);
+    expect(
+      ok(approvalDtoSchema, {
+        ...dto,
+        status: "approved",
+        decidedAt: dto.createdAt,
+        decidedBy: { kind: "api-key", label: "API key" },
+      }),
+    ).toBe(true);
+    expect(ok(approvalDtoSchema, { ...dto, decidedBy: { kind: "bot", label: "x" } })).toBe(false);
+    expect(ok(approvalDtoSchema, { ...dto, status: "consumed" })).toBe(false);
+  });
+  it("counts allow null oldest and median", () => {
+    const c = {
+      pending: 0,
+      oldestPendingAt: null,
+      approvedToday: 0,
+      deniedToday: 0,
+      medianWaitSeconds: null,
+    };
+    expect(ok(approvalCountsDtoSchema, c)).toBe(true);
+    expect(ok(approvalCountsDtoSchema, { ...c, pending: -1 })).toBe(false);
+  });
+  it("token events accept the pending outcome", () => {
+    expect(ok(tokenEventsQuerySchema, { outcome: "pending" })).toBe(true);
   });
 });
 

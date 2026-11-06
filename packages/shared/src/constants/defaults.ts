@@ -5,6 +5,11 @@ export const DEFAULTS = {
   SECRET_GRACE_SECONDS: 86400,
   TOKEN_EVENTS_RETENTION_DAYS: 30,
   TOKEN_EVENTS_PAGE_SIZE: 50,
+  // Scope ceiling with human approval (Task 6.3).
+  APPROVAL_TTL_SECONDS: 1800,
+  APPROVAL_TOKEN_TTL_SECONDS: 300,
+  APPROVAL_POLL_INTERVAL_SECONDS: 5,
+  APPROVALS_PAGE_SIZE: 50,
 } as const;
 
 // Agent guardrails (Task 6.2). TTL options are UI presets only; the backend TTL range is unchanged.

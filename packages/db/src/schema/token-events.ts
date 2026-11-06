@@ -11,7 +11,12 @@ import {
 } from "drizzle-orm/pg-core";
 import { tenants } from "./tenants.js";
 
-export const tokenEventOutcome = pgEnum("token_event_outcome", ["issued", "denied", "revoked"]);
+export const tokenEventOutcome = pgEnum("token_event_outcome", [
+  "issued",
+  "denied",
+  "revoked",
+  "pending",
+]);
 
 export const tokenEvents = pgTable(
   "token_events",

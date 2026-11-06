@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TASK_ID_REGEX } from "../constants/regex.js";
+import { approvalRequestExtraSchema } from "./approval.schema.js";
 
 // Form fields are strings; the route (not the schema) decides unsupported_grant_type.
 export const tokenRequestSchema = z.object({
@@ -11,6 +12,7 @@ export const tokenRequestSchema = z.object({
   client_assertion: z.string().max(4096).optional(),
   client_assertion_type: z.string().max(128).optional(),
   task_id: z.string().regex(TASK_ID_REGEX).optional(),
+  ...approvalRequestExtraSchema.shape,
 });
 
 export const introspectRequestSchema = z.object({

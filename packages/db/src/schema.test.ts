@@ -7,6 +7,7 @@ import {
   applicationGrants,
   applicationKeys,
   applications,
+  approvalRequests,
   resources,
   revokedTokens,
   scopes,
@@ -17,6 +18,7 @@ import {
 } from "./schema/index.js";
 
 const TABLES = [
+  "approval_requests",
   "token_events",
   "revoked_tokens",
   "signing_keys",
@@ -59,6 +61,16 @@ function signingKey(tenantId: string, kid: string) {
 
 function applicationKey(tenantId: string, applicationId: string, kid: string) {
   return { tenantId, applicationId, kid, publicKeyPem: "pub", fingerprintSha256: `fp-${kid}` };
+}
+
+function approvalRequest(
+  tenantId: string,
+  applicationId: string,
+  resourceId: string,
+  audience: string,
+) {
+  const expiresAt = new Date(Date.now() + 30 * 60_000);
+  return { tenantId, applicationId, resourceId, audience, scopes: ["x:read"], expiresAt };
 }
 
 beforeAll(async () => {
@@ -165,6 +177,75 @@ describe("schema constraints", () => {
     expect(await db.select().from(applicationKeys)).toHaveLength(0);
   });
 
+  it("rejects an approval request whose application or resource belongs to another tenant", async () => {
+    const a = await createTenant("tenant-a");
+    const b = await createTenant("tenant-b");
+    const [appOfA] = await db
+      .insert(applications)
+      .values({ tenantId: a.id, name: "app", clientId: "app_aaaaaaaaaaaaaaaaaaaa" })
+      .returning();
+    const [appOfB] = await db
+      .insert(applications)
+      .values({ tenantId: b.id, name: "app", clientId: "app_bbbbbbbbbbbbbbbbbbbb" })
+      .returning();
+    const resourceOfA = await createResource(a.id);
+    const resourceOfB = await createResource(b.id);
+
+    expect(
+      await pgErrorCode(
+        db
+          .insert(approvalRequests)
+          .values(approvalRequest(a.id, appOfB.id, resourceOfA.id, resourceOfA.audience)),
+      ),
+    ).toBe("23503");
+    expect(
+      await pgErrorCode(
+        db
+          .insert(approvalRequests)
+          .values(approvalRequest(a.id, appOfA.id, resourceOfB.id, resourceOfB.audience)),
+      ),
+    ).toBe("23503");
+  });
+
+  it("cascades application and resource deletes to approval requests and nulls decided_by", async () => {
+    const tenant = await createTenant("tenant-a");
+    const [admin] = await db
+      .insert(adminUsers)
+      .values({ email: "a@example.com", passwordHash: "h", name: "A" })
+      .returning();
+    const [app] = await db
+      .insert(applications)
+      .values({ tenantId: tenant.id, name: "app", clientId: "app_aaaaaaaaaaaaaaaaaaaa" })
+      .returning();
+    const resource = await createResource(tenant.id);
+    const other = await createResource(tenant.id, "Other");
+    const [decided] = await db
+      .insert(approvalRequests)
+      .values({
+        ...approvalRequest(tenant.id, app.id, resource.id, resource.audience),
+        status: "approved",
+        decidedBy: admin.id,
+        decidedAt: new Date(),
+      })
+      .returning();
+    expect(decided.scopes).toEqual(["x:read"]);
+    await db
+      .insert(approvalRequests)
+      .values(approvalRequest(tenant.id, app.id, other.id, other.audience));
+
+    await db.delete(adminUsers).where(eq(adminUsers.id, admin.id));
+    const [row] = await db
+      .select()
+      .from(approvalRequests)
+      .where(eq(approvalRequests.id, decided.id));
+    expect(row.decidedBy).toBeNull();
+
+    await db.delete(resources).where(eq(resources.id, other.id));
+    expect(await db.select().from(approvalRequests)).toHaveLength(1);
+    await db.delete(applications).where(eq(applications.id, app.id));
+    expect(await db.select().from(approvalRequests)).toHaveLength(0);
+  });
+
   it("cascades a tenant delete to every child table", async () => {
     const tenant = await createTenant("tenant-a");
     const [admin] = await db
@@ -197,6 +278,9 @@ describe("schema constraints", () => {
       outcome: "issued",
       scopes: ["x:read"],
     });
+    await db
+      .insert(approvalRequests)
+      .values(approvalRequest(tenant.id, app.id, resource.id, resource.audience));
 
     const children = TABLES.filter((t) => t !== "tenants" && t !== "admin_users");
     const count = async (table: string) => {

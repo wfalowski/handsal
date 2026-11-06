@@ -2,7 +2,7 @@ import { z } from "zod";
 import { DEFAULTS } from "../constants/defaults.js";
 
 export const tokenEventsQuerySchema = z.object({
-  outcome: z.enum(["issued", "denied", "revoked"]).optional(),
+  outcome: z.enum(["issued", "denied", "revoked", "pending"]).optional(),
   applicationId: z.uuid().optional(),
   taskId: z.string().max(128).optional(),
   q: z.string().max(255).optional(),
@@ -17,7 +17,7 @@ export const tokenEventDtoSchema = z.object({
   applicationClientId: z.string().nullable(),
   resourceId: z.uuid().nullable(),
   audience: z.string().nullable(),
-  outcome: z.enum(["issued", "denied", "revoked"]),
+  outcome: z.enum(["issued", "denied", "revoked", "pending"]),
   reason: z.string().nullable(),
   scopes: z.array(z.string()),
   jti: z.string().nullable(),
