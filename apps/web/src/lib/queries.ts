@@ -304,3 +304,94 @@ export function useGrantsSave(tenantId: string, appId: string) {
     onSuccess: invalidate,
   });
 }
+
+// --- resources (Task 4.3)
+export type ResourceListItem = ResourceDto & {
+  scopeCount: number;
+  appCount: number;
+  tokens24h: number;
+};
+export type ResourceDetail = ResourceDto & {
+  scopes: (ScopeDto & { grantedAppCount: number })[];
+  applications: { id: string; name: string; clientId: string }[];
+};
+type ResourceInput = { name: string; kind?: "api" | "mcp"; audience: string };
+export type ResourceCreateBody = ResourceInput & { tokenTtlSeconds?: number };
+export type ResourceUpdateBody = Partial<ResourceInput> & { tokenTtlSeconds?: number | null };
+type ScopeBody = { name?: string; description?: string | null };
+
+export function useResources(tenantId: string) {
+  return useQuery({
+    queryKey: ["resources", { tenantId }],
+    queryFn: () => api<ResourceListItem[]>(`/api/tenants/${tenantId}/resources`),
+  });
+}
+
+export function useResource(tenantId: string, resourceId: string | undefined) {
+  return useQuery({
+    queryKey: ["resource", { tenantId, resourceId }],
+    queryFn: () => api<ResourceDetail>(`/api/tenants/${tenantId}/resources/${resourceId}`),
+    enabled: !!resourceId,
+  });
+}
+
+/** Every resources/scopes mutation invalidates the list and the detail cache. */
+function useResourceMutation<V, R>(tenantId: string, fn: (v: V) => Promise<R>) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["resources", { tenantId }] }),
+        queryClient.invalidateQueries({ queryKey: ["resource", { tenantId }] }),
+      ]);
+    },
+  });
+}
+
+export function useCreateResource(tenantId: string) {
+  return useResourceMutation(tenantId, (body: ResourceCreateBody) =>
+    api<ResourceDto>(`/api/tenants/${tenantId}/resources`, { method: "POST", body }),
+  );
+}
+
+export function useUpdateResource(tenantId: string) {
+  return useResourceMutation(tenantId, (v: { id: string; body: ResourceUpdateBody }) =>
+    api<ResourceDto>(`/api/tenants/${tenantId}/resources/${v.id}`, {
+      method: "PATCH",
+      body: v.body,
+    }),
+  );
+}
+
+export function useDeleteResource(tenantId: string) {
+  return useResourceMutation(tenantId, (id: string) =>
+    api<void>(`/api/tenants/${tenantId}/resources/${id}`, { method: "DELETE" }),
+  );
+}
+
+export function useCreateScope(tenantId: string, resourceId: string) {
+  return useResourceMutation(tenantId, (body: { name: string; description?: string }) =>
+    api<ScopeDto>(`/api/tenants/${tenantId}/resources/${resourceId}/scopes`, {
+      method: "POST",
+      body,
+    }),
+  );
+}
+
+export function useUpdateScope(tenantId: string, resourceId: string) {
+  return useResourceMutation(tenantId, (v: { id: string; body: ScopeBody }) =>
+    api<ScopeDto>(`/api/tenants/${tenantId}/resources/${resourceId}/scopes/${v.id}`, {
+      method: "PATCH",
+      body: v.body,
+    }),
+  );
+}
+
+export function useDeleteScope(tenantId: string, resourceId: string) {
+  return useResourceMutation(tenantId, (id: string) =>
+    api<void>(`/api/tenants/${tenantId}/resources/${resourceId}/scopes/${id}`, {
+      method: "DELETE",
+    }),
+  );
+}
