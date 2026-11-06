@@ -139,6 +139,10 @@ Per tenant, under the issuer `https://<host>/t/<slug>`:
 
 Instance level: `GET /health` (process is up, returns the version), `GET /ready` (database reachable, else 503), `/api/*` management API (admin session or `ADMIN_API_KEY`), `/` admin UI. Full reference: [docs/api.md](docs/api.md).
 
+## Examples
+
+- [examples/mcp-agent](examples/mcp-agent/README.md): an MCP server (stdio) that lets an AI agent call Handsal-protected APIs with `private_key_jwt` and human approval, without the model ever seeing a token.
+
 ## Security model
 
 - Client secrets (`hs_` + 48 base62 chars) and admin passwords are hashed with Argon2id; secrets are shown once. Authentication failures cost one Argon2 verification even for unknown clients and return the same `invalid_client` for every reason.
