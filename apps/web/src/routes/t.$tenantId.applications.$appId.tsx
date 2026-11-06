@@ -2,6 +2,7 @@ import type { ApplicationDto } from "@handsal/shared";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { useState } from "react";
+import { AgentGuardrails } from "../components/AgentGuardrails";
 import { AuthMethodRadio, SELECT_CLASS, ttlOptions } from "../components/ApplicationForm";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
@@ -10,15 +11,19 @@ import { Dialog } from "../components/Dialog";
 import { EmptyState } from "../components/EmptyState";
 import { GrantsMatrix } from "../components/GrantsMatrix";
 import { Input } from "../components/Input";
+import { RegisteredKeys } from "../components/RegisteredKeys";
+import { RegisterKeyDialog } from "../components/RegisterKeyDialog";
 import { RotateSecretDialog } from "../components/RotateSecretDialog";
+import { RuntimeBinding } from "../components/RuntimeBinding";
 import { useToast } from "../components/Toast";
 import { ApiRequestError } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import {
   useApplicationDelete,
   useApplicationDetail,
+  useApplicationKeys,
+  useApplicationPatch,
   useApplicationSetStatus,
-  useApplicationUpdate,
   useGrantsResources,
   useMe,
   useTenant,
@@ -62,6 +67,9 @@ function ApplicationDetailPage() {
 
   const { application: app, grants, tokenEndpoint, issuer, recentTokens } = detail.data;
   const canEdit = role !== "auditor";
+  const isAgent = app.kind === "agent";
+  const agentBudgetUsed =
+    (detail.data as { agentBudgetUsed?: number | null }).agentBudgetUsed ?? null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -78,6 +86,18 @@ function ApplicationDetailPage() {
       <div className="flex flex-wrap items-start gap-6">
         <div className="flex min-w-0 flex-[2_1_480px] flex-col gap-6">
           <Credentials tenantId={tenantId} app={app} canEdit={canEdit} />
+          {isAgent && (
+            <RuntimeBinding key={app.updatedAt} tenantId={tenantId} app={app} canEdit={canEdit} />
+          )}
+          {isAgent && (
+            <AgentGuardrails
+              key={app.updatedAt}
+              tenantId={tenantId}
+              app={app}
+              budgetUsed={agentBudgetUsed}
+              canEdit={canEdit}
+            />
+          )}
           {grantsRes.isPending ? (
             <p className="text-muted">Loading access…</p>
           ) : grantsRes.isError ? (
@@ -91,6 +111,11 @@ function ApplicationDetailPage() {
               resources={grantsRes.resources}
               grants={grants}
               canEdit={canEdit}
+              {...(isAgent && {
+                title: "Scope ceiling",
+                subtitle:
+                  "The most this agent can ever hold. Marked scopes pause the request for a human to approve.",
+              })}
             />
           )}
         </div>
@@ -212,6 +237,7 @@ function Header({
         <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="font-display font-semibold text-[28px] tracking-tight">{app.name}</h1>
           <Badge tone={disabled ? "neutral" : "success"}>{disabled ? "Disabled" : "Active"}</Badge>
+          {app.kind === "agent" && <Badge tone="info">AI agent</Badge>}
         </div>
         <p className="text-muted">
           {app.description ? `${app.description} · ` : ""}created{" "}
@@ -295,7 +321,12 @@ function Credentials({
   canEdit: boolean;
 }) {
   const toast = useToast();
-  const update = useApplicationUpdate(tenantId, app.id);
+  const update = useApplicationPatch(tenantId, app.id);
+  const keys = useApplicationKeys(tenantId, app.id);
+  const [registering, setRegistering] = useState(false);
+  const isAgent = app.kind === "agent";
+  const usesKey = app.tokenEndpointAuthMethod === "private_key_jwt";
+  const hasActiveKey = (keys.data ?? []).some((k) => k.status === "active");
   const [rotating, setRotating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [method, setMethod] = useState(app.tokenEndpointAuthMethod);
@@ -310,12 +341,25 @@ function Credentials({
       <div className="flex flex-wrap items-center justify-between gap-3 border-hover border-b p-[18px] pr-5 pl-5">
         <div className="flex flex-col">
           <h2 className="font-semibold text-[15px]">Credentials</h2>
-          <span className="text-muted text-[13px]">Used with the client_credentials grant</span>
+          <span className="text-muted text-[13px]">
+            {isAgent
+              ? "Held by the agent runtime, never by the model. Key-based auth means there is no shared secret to leak into a prompt."
+              : "Used with the client_credentials grant"}
+          </span>
         </div>
         {canEdit && (
-          <Button variant="secondary" size="sm" onClick={() => setRotating(true)}>
-            Rotate secret
-          </Button>
+          <div className="flex gap-2">
+            {(usesKey || isAgent) && (
+              <Button variant="secondary" size="sm" onClick={() => setRegistering(true)}>
+                Register key
+              </Button>
+            )}
+            {!usesKey && (
+              <Button variant="secondary" size="sm" onClick={() => setRotating(true)}>
+                Rotate secret
+              </Button>
+            )}
+          </div>
         )}
       </div>
       <div className="flex flex-col gap-4 p-5">
@@ -337,42 +381,55 @@ function Credentials({
             </Button>
           </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <span className="font-medium text-body text-xs">Client secret</span>
-          <div className="flex h-[42px] items-center rounded-[10px] border border-line bg-surface pr-3.5 pl-3.5">
-            <code className="font-mono text-[13px]" title="Hidden">
-              {"•".repeat(32)}
-            </code>
-          </div>
-          <span className="text-muted text-xs">
-            {app.secretRotatedAt
-              ? `Last rotated ${relativeTime(app.secretRotatedAt)}`
-              : "Secret never rotated"}
-            {graceActive &&
-              app.previousSecretExpiresAt &&
-              ` · previous secret valid until ${new Date(app.previousSecretExpiresAt).toLocaleString()}`}
-          </span>
-        </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <AuthMethodRadio value={method} onChange={setMethod} />
+        {!usesKey && (
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="ttl" className="font-medium text-[13px] text-body">
-              Access token lifetime
-            </label>
-            <select
-              id="ttl"
-              value={ttl}
-              disabled={!canEdit}
-              onChange={(e) => setTtl(e.target.value)}
-              className={SELECT_CLASS}
-            >
-              {ttlOptions(ttl).map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            <span className="font-medium text-body text-xs">Client secret</span>
+            <div className="flex h-[42px] items-center rounded-[10px] border border-line bg-surface pr-3.5 pl-3.5">
+              <code className="font-mono text-[13px]" title="Hidden">
+                {"•".repeat(32)}
+              </code>
+            </div>
+            <span className="text-muted text-xs">
+              {app.secretRotatedAt
+                ? `Last rotated ${relativeTime(app.secretRotatedAt)}`
+                : "Secret never rotated"}
+              {graceActive &&
+                app.previousSecretExpiresAt &&
+                ` · previous secret valid until ${new Date(app.previousSecretExpiresAt).toLocaleString()}`}
+            </span>
           </div>
+        )}
+        {(usesKey || isAgent) && (
+          <RegisteredKeys tenantId={tenantId} appId={app.id} canEdit={canEdit} />
+        )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <AuthMethodRadio
+            value={method}
+            onChange={setMethod}
+            agent={isAgent}
+            allowPrivateKey={hasActiveKey || usesKey}
+            disabled={!canEdit}
+          />
+          {!isAgent && (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="ttl" className="font-medium text-[13px] text-body">
+                Access token lifetime
+              </label>
+              <select
+                id="ttl"
+                value={ttl}
+                disabled={!canEdit}
+                onChange={(e) => setTtl(e.target.value)}
+                className={SELECT_CLASS}
+              >
+                {ttlOptions(ttl).map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         {canEdit && (
           <div className="flex justify-end gap-2">
@@ -406,6 +463,12 @@ function Credentials({
           </div>
         )}
       </div>
+      <RegisterKeyDialog
+        tenantId={tenantId}
+        appId={app.id}
+        open={registering}
+        onClose={() => setRegistering(false)}
+      />
       <RotateSecretDialog
         tenantId={tenantId}
         appId={app.id}

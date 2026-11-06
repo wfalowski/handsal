@@ -1,5 +1,6 @@
 import type {
   ApplicationDto,
+  ApplicationKeyDto,
   MemberDto,
   ResourceDto,
   ScopeDto,
@@ -568,5 +569,130 @@ export function useAgentAppIds(tenantId: string) {
       ),
     staleTime: 30_000,
     select: (d) => new Set(d.items.filter((a) => a.kind === "agent").map((a) => a.id)),
+  });
+}
+
+// --- applications: keys + agents (Tasks 6.1/6.2)
+export type AgentFields = {
+  agentRuntime?: string | null;
+  operatorEmail?: string | null;
+  allowedCidrs?: string[];
+  maxScopesPerToken?: number | null;
+  tokenBudgetPerHour?: number | null;
+};
+export type ApplicationWriteInput = AgentFields & {
+  tokenEndpointAuthMethod?: ApplicationDto["tokenEndpointAuthMethod"];
+  tokenTtlSeconds?: number | null;
+};
+
+/** Like useApplicationsList, with the `kind` filter. */
+export function useApplicationsListByKind(
+  tenantId: string,
+  filters: { q: string; status?: ApplicationStatusFilter; kind?: "service" | "agent" },
+) {
+  return useQuery({
+    queryKey: ["applications", { tenantId, ...filters }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filters.q) params.set("q", filters.q);
+      if (filters.status) params.set("status", filters.status);
+      if (filters.kind) params.set("kind", filters.kind);
+      const qs = params.size ? `?${params}` : "";
+      return (
+        await api<{ items: ApplicationListItem[] }>(`/api/tenants/${tenantId}/applications${qs}`)
+      ).items;
+    },
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Create accepting `kind` and the agent fields. */
+export function useApplicationCreateWithKind(tenantId: string) {
+  const invalidate = useApplicationInvalidate(tenantId);
+  return useMutation({
+    mutationFn: (
+      input: ApplicationWriteInput & {
+        name: string;
+        description?: string;
+        kind?: "service" | "agent";
+      },
+    ) =>
+      api<{ application: ApplicationDto; clientSecret: string }>(
+        `/api/tenants/${tenantId}/applications`,
+        { method: "POST", body: input },
+      ),
+    onSuccess: invalidate,
+  });
+}
+
+/** PATCH accepting the agent fields. */
+export function useApplicationPatch(tenantId: string, appId: string) {
+  const invalidate = useApplicationInvalidate(tenantId);
+  return useMutation({
+    mutationFn: (input: ApplicationWriteInput) =>
+      api<ApplicationDto>(`/api/tenants/${tenantId}/applications/${appId}`, {
+        method: "PATCH",
+        body: input,
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useApplicationKeys(tenantId: string, appId: string) {
+  return useQuery({
+    queryKey: ["application-keys", { tenantId, appId }],
+    queryFn: async () =>
+      (
+        await api<{ items: ApplicationKeyDto[] }>(
+          `/api/tenants/${tenantId}/applications/${appId}/keys`,
+        )
+      ).items,
+  });
+}
+
+function useKeyInvalidate(tenantId: string, appId: string) {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["application-keys", { tenantId, appId }] }),
+      queryClient.invalidateQueries({ queryKey: ["application", { tenantId, appId }] }),
+    ]);
+}
+
+export function useRegisterApplicationKey(tenantId: string, appId: string) {
+  const invalidate = useKeyInvalidate(tenantId, appId);
+  return useMutation({
+    mutationFn: (input: { kid: string; publicKeyPem: string }) =>
+      api<ApplicationKeyDto>(`/api/tenants/${tenantId}/applications/${appId}/keys`, {
+        method: "POST",
+        body: input,
+      }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRetireApplicationKey(tenantId: string, appId: string) {
+  const invalidate = useKeyInvalidate(tenantId, appId);
+  return useMutation({
+    mutationFn: (keyId: string) =>
+      api<ApplicationKeyDto>(
+        `/api/tenants/${tenantId}/applications/${appId}/keys/${keyId}/retire`,
+        {
+          method: "POST",
+          body: {},
+        },
+      ),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteApplicationKey(tenantId: string, appId: string) {
+  const invalidate = useKeyInvalidate(tenantId, appId);
+  return useMutation({
+    mutationFn: (keyId: string) =>
+      api<void>(`/api/tenants/${tenantId}/applications/${appId}/keys/${keyId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: invalidate,
   });
 }

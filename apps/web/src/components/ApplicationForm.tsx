@@ -1,7 +1,8 @@
 import type { ApplicationDto } from "@handsal/shared";
+import { AGENT_TTL_OPTIONS } from "@handsal/shared/constants";
 import { type FormEvent, useState } from "react";
 import { ApiRequestError } from "../lib/api";
-import { useApplicationCreate } from "../lib/queries";
+import { useApplicationCreateWithKind } from "../lib/queries";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
 import { Input } from "./Input";
@@ -29,39 +30,59 @@ export function ttlOptions(value: string) {
     : [...TTL_OPTIONS, { value, label: `${value} s` }];
 }
 
-const METHODS: { value: AuthMethod; label: string; disabled?: boolean }[] = [
+const METHODS: { value: AuthMethod; label: string }[] = [
   { value: "client_secret_basic", label: "client_secret_basic" },
   { value: "client_secret_post", label: "client_secret_post" },
-  { value: "private_key_jwt", label: "private_key_jwt", disabled: true },
+  { value: "private_key_jwt", label: "private_key_jwt" },
 ];
+
+const AGENT_TTL_LABELS: Record<number, string> = {
+  60: "1 minute",
+  300: "5 minutes",
+  900: "15 minutes",
+};
 
 export function AuthMethodRadio({
   value,
   onChange,
+  agent,
+  allowPrivateKey = true,
+  disabled,
 }: {
   value: AuthMethod;
   onChange: (v: AuthMethod) => void;
+  agent?: boolean;
+  /** private_key_jwt needs at least one active registered key (API: 400 no_application_key). */
+  allowPrivateKey?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <fieldset className="flex flex-col gap-1.5">
       <legend className="mb-1.5 font-medium text-[13px] text-body">Authentication method</legend>
-      {METHODS.map((m) => (
-        <label
-          key={m.value}
-          className="flex items-center gap-2 font-mono text-[13px] has-[:disabled]:text-faint"
-        >
-          <input
-            type="radio"
-            name="auth-method"
-            className="accent-accent"
-            checked={value === m.value}
-            disabled={m.disabled}
-            onChange={() => onChange(m.value)}
-          />
-          {m.label}
-          {m.disabled && <span className="font-sans text-xs">coming soon</span>}
-        </label>
-      ))}
+      {METHODS.map((m) => {
+        const off = disabled || (m.value === "private_key_jwt" && !allowPrivateKey);
+        return (
+          <label
+            key={m.value}
+            className="flex items-center gap-2 font-mono text-[13px] has-[:disabled]:text-faint"
+          >
+            <input
+              type="radio"
+              name="auth-method"
+              className="accent-accent"
+              checked={value === m.value}
+              disabled={off}
+              onChange={() => onChange(m.value)}
+            />
+            {m.value === "private_key_jwt" && agent
+              ? "private_key_jwt (recommended for agents)"
+              : m.label}
+            {m.value === "private_key_jwt" && !allowPrivateKey && (
+              <span className="font-sans text-xs">register a public key first</span>
+            )}
+          </label>
+        );
+      })}
     </fieldset>
   );
 }
@@ -113,11 +134,12 @@ function Form({
   onCreated: (app: ApplicationDto, secret: string) => void;
 }) {
   const toast = useToast();
-  const create = useApplicationCreate(tenantId);
+  const create = useApplicationCreateWithKind(tenantId);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [method, setMethod] = useState<AuthMethod>("client_secret_basic");
   const [ttl, setTtl] = useState("");
+  const [kind, setKind] = useState<"service" | "agent">("service");
   const [taken, setTaken] = useState(false);
 
   function handleSubmit(e: FormEvent) {
@@ -128,6 +150,7 @@ function Form({
         description: description.trim() || undefined,
         tokenEndpointAuthMethod: method,
         tokenTtlSeconds: ttl ? Number(ttl) : undefined,
+        ...(kind === "agent" && { kind }),
       },
       {
         onSuccess: (res) => onCreated(res.application, res.clientSecret),
@@ -141,6 +164,31 @@ function Form({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 font-medium text-[13px] text-body">Type</legend>
+        {(
+          [
+            ["service", "Service"],
+            ["agent", "AI agent"],
+          ] as const
+        ).map(([v, label]) => (
+          <label key={v} className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="app-kind"
+              className="accent-accent"
+              checked={kind === v}
+              onChange={() => {
+                setKind(v);
+                // Agents default to key-based auth and a 5-minute lease; both are editable.
+                setMethod(v === "agent" ? "private_key_jwt" : "client_secret_basic");
+                setTtl(v === "agent" ? "300" : "");
+              }}
+            />
+            {label}
+          </label>
+        ))}
+      </fieldset>
       <Input
         label="Name"
         value={name}
@@ -160,7 +208,12 @@ function Form({
         autoComplete="off"
         onChange={(e) => setDescription(e.target.value)}
       />
-      <AuthMethodRadio value={method} onChange={setMethod} />
+      <AuthMethodRadio
+        value={method}
+        onChange={setMethod}
+        agent={kind === "agent"}
+        allowPrivateKey={kind === "agent"}
+      />
       <div className="flex flex-col gap-1.5">
         <label htmlFor="new-app-ttl" className="font-medium text-[13px] text-body">
           Access token lifetime
@@ -171,12 +224,21 @@ function Form({
           onChange={(e) => setTtl(e.target.value)}
           className={SELECT_CLASS}
         >
-          {TTL_OPTIONS.map((o) => (
+          {(kind === "agent"
+            ? AGENT_TTL_OPTIONS.map((s) => ({
+                value: String(s),
+                label: AGENT_TTL_LABELS[s] ?? `${s} s`,
+              }))
+            : TTL_OPTIONS
+          ).map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
           ))}
         </select>
+        {kind === "agent" && (
+          <p className="text-muted text-xs">Agents get short leases, one per task.</p>
+        )}
       </div>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel}>

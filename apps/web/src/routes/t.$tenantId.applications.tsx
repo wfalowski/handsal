@@ -11,7 +11,7 @@ import { relativeTime } from "../lib/format";
 import {
   type ApplicationListItem,
   type ApplicationStatusFilter,
-  useApplicationsList,
+  useApplicationsListByKind,
   useMe,
 } from "../lib/queries";
 
@@ -25,9 +25,11 @@ function ApplicationsLayout() {
   return hasChild ? <Outlet /> : <ApplicationsPage />;
 }
 
-const FILTERS: { id: "all" | ApplicationStatusFilter; label: string }[] = [
+type Filter = "all" | ApplicationStatusFilter | "agents";
+const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "active", label: "Active" },
+  { id: "agents", label: "AI agents" },
   { id: "needs_attention", label: "Needs attention" },
 ];
 const MAX_CHIPS = 2;
@@ -47,7 +49,7 @@ function ApplicationsPage() {
   const role = useMe().data?.tenants.find((t) => t.id === tenantId)?.role;
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | ApplicationStatusFilter>("all");
+  const [filter, setFilter] = useState<Filter>("all");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -55,9 +57,10 @@ function ApplicationsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const apps = useApplicationsList(tenantId, {
+  const apps = useApplicationsListByKind(tenantId, {
     q,
-    status: filter === "all" ? undefined : filter,
+    status: filter === "all" || filter === "agents" ? undefined : filter,
+    kind: filter === "agents" ? "agent" : undefined,
   });
   const error = apps.error?.message;
   useEffect(() => {
@@ -125,10 +128,11 @@ function ApplicationsPage() {
           }
         />
       ) : (
-        <Table minWidth={820}>
+        <Table minWidth={900}>
           <thead>
             <tr>
               <Th>Application</Th>
+              <Th>Type</Th>
               <Th>Client ID</Th>
               <Th>Resources</Th>
               <Th>Scopes</Th>
@@ -156,6 +160,11 @@ function ApplicationsPage() {
                     </button>
                     {a.description && <span className="text-muted text-xs">{a.description}</span>}
                   </div>
+                </Td>
+                <Td>
+                  <Badge tone={a.kind === "agent" ? "info" : "neutral"}>
+                    {a.kind === "agent" ? "AI agent" : "Service"}
+                  </Badge>
                 </Td>
                 <Td className="whitespace-nowrap font-mono text-body text-xs">{a.clientId}</Td>
                 <Td>{a.resourceCount}</Td>

@@ -11,11 +11,21 @@ type Props = {
   resources: ResourceWithScopes[];
   grants: GrantView[];
   canEdit: boolean;
+  title?: string;
+  subtitle?: string;
 };
 
 const key = (ids: Iterable<string>) => [...ids].sort().join(",");
 
-export function GrantsMatrix({ tenantId, appId, resources, grants, canEdit }: Props) {
+export function GrantsMatrix({
+  tenantId,
+  appId,
+  resources,
+  grants,
+  canEdit,
+  title = "Access",
+  subtitle,
+}: Props) {
   const toast = useToast();
   const save = useGrantsSave(tenantId, appId);
   const serverIds = grants.flatMap((g) => g.scopes.map((s) => s.id));
@@ -40,7 +50,8 @@ export function GrantsMatrix({ tenantId, appId, resources, grants, canEdit }: Pr
   return (
     <section className="flex flex-col rounded-[14px] border border-line bg-white">
       <div className="border-hover border-b pt-[18px] pr-5 pb-[18px] pl-5">
-        <h2 className="font-semibold text-[15px]">Access</h2>
+        <h2 className="font-semibold text-[15px]">{title}</h2>
+        {subtitle && <p className="text-muted text-[13px]">{subtitle}</p>}
         <span className="text-muted text-[13px]">
           {total} scopes granted across {withGrants} resources
         </span>
