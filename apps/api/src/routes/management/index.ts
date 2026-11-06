@@ -6,6 +6,8 @@ import { authRoutes } from "./auth.js";
 import { signingKeyRoutes } from "./signing-keys.js";
 import { tokenEventRoutes } from "./token-events.js";
 import { resourceRoutes } from "./resources.js";
+import { memberRoutes } from "./members.js";
+import { tenantRoutes } from "./tenants.js";
 
 // Mounted at /api. Everything except login/logout requires an actor (session or API key)
 // and, for session actors, X-CSRF-Token on mutating methods.
@@ -21,3 +23,5 @@ managementRoutes.route("/tenants", signingKeyRoutes);
 managementRoutes.route("/tenants", tokenEventRoutes);
 managementRoutes.route("/tenants", applicationRoutes);
 managementRoutes.route("/tenants", resourceRoutes);
+managementRoutes.route("/tenants", tenantRoutes);
+managementRoutes.route("/tenants", memberRoutes);

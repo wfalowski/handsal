@@ -60,20 +60,29 @@ async function insertActiveKey(tx: Tx | typeof db, tenantId: string): Promise<Si
   throw new Error("Could not generate a unique signing key id");
 }
 
-async function selectActiveKey(tenantId: string): Promise<SigningKey | undefined> {
-  const [row] = await db
+async function selectActiveKey(
+  tx: Tx | typeof db,
+  tenantId: string,
+): Promise<SigningKey | undefined> {
+  const [row] = await tx
     .select(publicColumns)
     .from(signingKeys)
     .where(and(eq(signingKeys.tenantId, tenantId), eq(signingKeys.status, "active")));
   return row;
 }
 
-/** Return the tenant's active key, creating one when there is none (idempotent, race-safe). */
-export async function ensureActiveKey(tenantId: string): Promise<SigningKey> {
+/**
+ * Return the tenant's active key, creating one when there is none (idempotent, race-safe).
+ * Pass `tx` to run inside a caller's transaction (e.g. right after inserting the tenant).
+ */
+export async function ensureActiveKey(
+  tenantId: string,
+  tx: Tx | typeof db = db,
+): Promise<SigningKey> {
   for (let attempt = 0; attempt < MAX_KID_ATTEMPTS; attempt++) {
-    const existing = await selectActiveKey(tenantId);
+    const existing = await selectActiveKey(tx, tenantId);
     if (existing) return existing;
-    const created = await insertActiveKey(db, tenantId);
+    const created = await insertActiveKey(tx, tenantId);
     if (created) {
       logger.info({ tenantId, kid: created.kid }, "Created signing key");
       return created;
