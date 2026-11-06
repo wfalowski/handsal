@@ -11,6 +11,7 @@
     "check": "biome check .",
     "check:fix": "biome check --fix .",
     "typecheck": "turbo typecheck",
+    "smoke": "bash scripts/smoke.sh",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
