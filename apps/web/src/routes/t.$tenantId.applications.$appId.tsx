@@ -34,7 +34,12 @@ export const Route = createFileRoute("/t/$tenantId/applications/$appId")({
 });
 
 const CARD = "rounded-[14px] border border-line bg-white";
-const DOT = { issued: "bg-[#22C55E]", denied: "bg-danger", revoked: "bg-faint" };
+const DOT = {
+  issued: "bg-[#22C55E]",
+  denied: "bg-danger",
+  revoked: "bg-faint",
+  pending: "bg-amber-400",
+};
 
 function ApplicationDetailPage() {
   const { tenantId, appId } = Route.useParams();

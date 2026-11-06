@@ -14,8 +14,18 @@ const REASONS: Record<string, string> = {
   tenant_paused: "tenant paused",
   invalid_client: "invalid client",
 };
-const TONES = { issued: "success", denied: "danger", revoked: "warning" } as const;
-const LABELS = { issued: "Issued", denied: "Denied", revoked: "Revoked" } as const;
+const TONES = {
+  issued: "success",
+  denied: "danger",
+  revoked: "warning",
+  pending: "warning",
+} as const;
+const LABELS = {
+  issued: "Issued",
+  denied: "Denied",
+  revoked: "Revoked",
+  pending: "Pending",
+} as const;
 
 function CopyJti({ jti }: { jti: string }) {
   const [copied, setCopied] = useState(false);
