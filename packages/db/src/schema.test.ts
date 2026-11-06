@@ -5,6 +5,7 @@ import { runMigrations } from "./migrate.js";
 import {
   adminUsers,
   applicationGrants,
+  applicationKeys,
   applications,
   resources,
   revokedTokens,
@@ -19,6 +20,7 @@ const TABLES = [
   "token_events",
   "revoked_tokens",
   "signing_keys",
+  "application_keys",
   "application_grants",
   "scopes",
   "resources",
@@ -53,6 +55,10 @@ async function createResource(tenantId: string, name = "API") {
 
 function signingKey(tenantId: string, kid: string) {
   return { tenantId, kid, publicKeyPem: "pub", privateKeyEnc: "enc" };
+}
+
+function applicationKey(tenantId: string, applicationId: string, kid: string) {
+  return { tenantId, applicationId, kid, publicKeyPem: "pub", fingerprintSha256: `fp-${kid}` };
 }
 
 beforeAll(async () => {
@@ -114,6 +120,51 @@ describe("schema constraints", () => {
     expect(code).toBe("23505"); // unique_violation
   });
 
+  it("rejects an application key whose application belongs to another tenant", async () => {
+    const a = await createTenant("tenant-a");
+    const b = await createTenant("tenant-b");
+    const [appOfB] = await db
+      .insert(applications)
+      .values({ tenantId: b.id, name: "app", clientId: "app_bbbbbbbbbbbbbbbbbbbb" })
+      .returning();
+
+    const code = await pgErrorCode(
+      db.insert(applicationKeys).values(applicationKey(a.id, appOfB.id, "ak_1")),
+    );
+
+    expect(code).toBe("23503");
+  });
+
+  it("rejects a duplicate kid or fingerprint within one application", async () => {
+    const tenant = await createTenant("tenant-a");
+    const [app] = await db
+      .insert(applications)
+      .values({ tenantId: tenant.id, name: "app", clientId: "app_aaaaaaaaaaaaaaaaaaaa" })
+      .returning();
+    await db.insert(applicationKeys).values(applicationKey(tenant.id, app.id, "ak_1"));
+
+    const dupKid = { ...applicationKey(tenant.id, app.id, "ak_1"), fingerprintSha256: "other" };
+    const dupFingerprint = {
+      ...applicationKey(tenant.id, app.id, "ak_2"),
+      fingerprintSha256: "fp-ak_1",
+    };
+    expect(await pgErrorCode(db.insert(applicationKeys).values(dupKid))).toBe("23505");
+    expect(await pgErrorCode(db.insert(applicationKeys).values(dupFingerprint))).toBe("23505");
+  });
+
+  it("cascades an application delete to its keys", async () => {
+    const tenant = await createTenant("tenant-a");
+    const [app] = await db
+      .insert(applications)
+      .values({ tenantId: tenant.id, name: "app", clientId: "app_aaaaaaaaaaaaaaaaaaaa" })
+      .returning();
+    await db.insert(applicationKeys).values(applicationKey(tenant.id, app.id, "ak_1"));
+
+    await db.delete(applications).where(eq(applications.id, app.id));
+
+    expect(await db.select().from(applicationKeys)).toHaveLength(0);
+  });
+
   it("cascades a tenant delete to every child table", async () => {
     const tenant = await createTenant("tenant-a");
     const [admin] = await db
@@ -136,6 +187,7 @@ describe("schema constraints", () => {
       .insert(applicationGrants)
       .values({ tenantId: tenant.id, applicationId: app.id, scopeId: scope.id });
     await db.insert(signingKeys).values(signingKey(tenant.id, "k_1"));
+    await db.insert(applicationKeys).values(applicationKey(tenant.id, app.id, "ak_1"));
     await db
       .insert(revokedTokens)
       .values({ jti: "jti-1", tenantId: tenant.id, expiresAt: new Date(Date.now() + 60_000) });

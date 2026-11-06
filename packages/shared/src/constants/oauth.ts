@@ -13,6 +13,12 @@ export const OAUTH_ERRORS = {
 } as const;
 export type OAuthErrorCode = (typeof OAUTH_ERRORS)[keyof typeof OAUTH_ERRORS];
 
+export const CLIENT_ASSERTION_TYPES = {
+  JWT_BEARER: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+} as const;
+export const ASSERTION_MAX_LIFETIME_SECONDS = 300;
+export const ASSERTION_CLOCK_TOLERANCE_SECONDS = 60;
+
 export const TOKEN_ENDPOINT_AUTH_METHODS = {
   CLIENT_SECRET_BASIC: "client_secret_basic",
   CLIENT_SECRET_POST: "client_secret_post",

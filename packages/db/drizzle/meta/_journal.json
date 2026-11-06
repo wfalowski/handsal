@@ -15,6 +15,13 @@
       "when": 1793946139641,
       "tag": "0001_condemned_rawhide_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793951853723,
+      "tag": "0002_sad_spencer_smythe",
+      "breakpoints": true
     }
   ]
 }

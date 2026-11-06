@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -48,6 +49,12 @@ export const applications = pgTable(
       .notNull()
       .defaultNow()
       .$onUpdate(() => new Date()),
+    // Agent-only guardrails (kind = 'agent'); null / empty means unrestricted.
+    agentRuntime: varchar("agent_runtime", { length: 64 }),
+    operatorEmail: varchar("operator_email", { length: 255 }),
+    allowedCidrs: text("allowed_cidrs").array().notNull().default(sql`'{}'::text[]`),
+    maxScopesPerToken: integer("max_scopes_per_token"),
+    tokenBudgetPerHour: integer("token_budget_per_hour"),
   },
   (t) => [
     index("idx_applications_tenant_id").on(t.tenantId),

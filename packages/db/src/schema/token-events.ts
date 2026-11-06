@@ -31,10 +31,15 @@ export const tokenEvents = pgTable(
     jti: varchar("jti", { length: 64 }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     sourceIp: varchar("source_ip", { length: 45 }),
+    taskId: varchar("task_id", { length: 128 }),
+    // Delegating actor (`act.sub`); written by token exchange (Task 6.4).
+    actorSub: varchar("actor_sub", { length: 255 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("idx_token_events_tenant_id_created_at").on(t.tenantId, t.createdAt.desc()),
     index("idx_token_events_jti").on(t.jti),
+    index("idx_token_events_application_id_created_at").on(t.applicationId, t.createdAt.desc()),
+    index("idx_token_events_task_id").on(t.taskId),
   ],
 );

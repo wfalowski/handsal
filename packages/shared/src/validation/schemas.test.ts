@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_ID_REGEX, DEFAULTS } from "../constants/index.js";
+import { CLIENT_ASSERTION_TYPES, CLIENT_ID_REGEX, DEFAULTS } from "../constants/index.js";
 import {
   applicationCreateSchema,
+  applicationKeyCreateSchema,
+  applicationKeyRetireSchema,
   applicationUpdateSchema,
   grantsReplaceSchema,
   introspectRequestSchema,
@@ -11,6 +13,7 @@ import {
   resourceCreateSchema,
   rotateSecretSchema,
   scopeCreateSchema,
+  tasksQuerySchema,
   tenantCreateSchema,
   tenantUpdateSchema,
   tokenEventsQuerySchema,
@@ -55,14 +58,49 @@ describe("application", () => {
     expect(ok(applicationCreateSchema, { name: "a", tokenTtlSeconds: 86401 })).toBe(false);
     expect(ok(applicationUpdateSchema, { tokenTtlSeconds: 59 })).toBe(false);
   });
-  it("refuses private_key_jwt with message", () => {
-    const r = applicationCreateSchema.safeParse({
+  it("accepts private_key_jwt", () => {
+    expect(
+      ok(applicationCreateSchema, { name: "a", tokenEndpointAuthMethod: "private_key_jwt" }),
+    ).toBe(true);
+    expect(ok(applicationUpdateSchema, { tokenEndpointAuthMethod: "private_key_jwt" })).toBe(true);
+  });
+  it("kind is optional and accepts agent with guardrails", () => {
+    expect(applicationCreateSchema.parse({ name: "a" }).kind).toBeUndefined();
+    const agent = {
       name: "a",
-      tokenEndpointAuthMethod: "private_key_jwt",
-    });
-    expect(r.success).toBe(false);
-    expect(JSON.stringify(r.error?.issues)).toContain("private_key_jwt is not available yet");
-    expect(ok(applicationUpdateSchema, { tokenEndpointAuthMethod: "private_key_jwt" })).toBe(false);
+      kind: "agent",
+      agentRuntime: "langgraph",
+      operatorEmail: "ops@example.com",
+      allowedCidrs: ["10.0.0.0/8", "2001:db8::/32"],
+      maxScopesPerToken: 3,
+      tokenBudgetPerHour: 120,
+    };
+    expect(ok(applicationCreateSchema, agent)).toBe(true);
+    expect(ok(applicationCreateSchema, { name: "a", kind: "robot" })).toBe(false);
+  });
+  it("agent field bounds", () => {
+    const bad = [
+      { allowedCidrs: ["10.0.0.0"] },
+      { allowedCidrs: ["10.0.0.0/33"] },
+      { allowedCidrs: Array.from({ length: 21 }, () => "10.0.0.0/8") },
+      { maxScopesPerToken: 0 },
+      { maxScopesPerToken: 51 },
+      { tokenBudgetPerHour: 0 },
+      { tokenBudgetPerHour: 100001 },
+      { operatorEmail: "nope" },
+      { agentRuntime: "" },
+    ];
+    for (const b of bad)
+      expect(
+        ok(applicationCreateSchema, { name: "a", kind: "agent", ...b }),
+        JSON.stringify(b),
+      ).toBe(false);
+  });
+  it("update: agent fields nullable, kind not accepted", () => {
+    expect(ok(applicationUpdateSchema, { allowedCidrs: null, tokenBudgetPerHour: null })).toBe(
+      true,
+    );
+    expect(ok(applicationUpdateSchema.strict(), { kind: "agent" })).toBe(false);
   });
   it("rejects unknown auth method", () => {
     expect(ok(applicationCreateSchema, { name: "a", tokenEndpointAuthMethod: "none" })).toBe(false);
@@ -137,6 +175,21 @@ describe("oauth requests", () => {
     expect(ok(tokenRequestSchema, { resource: "x" })).toBe(false);
     expect(ok(tokenRequestSchema, { grant_type: "client_credentials", resource: "" })).toBe(false);
   });
+  it("token request: client_assertion and task_id", () => {
+    const base = { grant_type: "client_credentials", resource: "https://api" };
+    expect(
+      ok(tokenRequestSchema, {
+        ...base,
+        client_assertion: "a.b.c",
+        client_assertion_type: CLIENT_ASSERTION_TYPES.JWT_BEARER,
+        task_id: "run-42:step.1",
+      }),
+    ).toBe(true);
+    expect(ok(tokenRequestSchema, { ...base, client_assertion: "x".repeat(4097) })).toBe(false);
+    expect(ok(tokenRequestSchema, { ...base, task_id: "has space" })).toBe(false);
+    expect(ok(tokenRequestSchema, { ...base, task_id: "" })).toBe(false);
+    expect(ok(tokenRequestSchema, { ...base, task_id: "a".repeat(129) })).toBe(false);
+  });
   it("introspect requires token", () => {
     expect(ok(introspectRequestSchema, { token: "t", token_type_hint: "access_token" })).toBe(true);
     expect(ok(introspectRequestSchema, {})).toBe(false);
@@ -162,5 +215,25 @@ describe("token events", () => {
     };
     expect(ok(tokenStatsDtoSchema, s)).toBe(true);
     expect(ok(tokenStatsDtoSchema, { ...s, denied24h: -1 })).toBe(false);
+  });
+  it("tasks query defaults and bounds limit", () => {
+    expect(tasksQuerySchema.parse({}).limit).toBe(20);
+    expect(ok(tasksQuerySchema, { limit: "101" })).toBe(false);
+    expect(ok(tokenEventsQuerySchema, { taskId: "x".repeat(129) })).toBe(false);
+  });
+});
+
+describe("application keys", () => {
+  it("kid charset and length", () => {
+    expect(ok(applicationKeyCreateSchema, { kid: "key-1:v2.a_b", publicKeyPem: "pem" })).toBe(true);
+    expect(ok(applicationKeyCreateSchema, { kid: "has space", publicKeyPem: "pem" })).toBe(false);
+    expect(ok(applicationKeyCreateSchema, { kid: "k".repeat(129), publicKeyPem: "pem" })).toBe(
+      false,
+    );
+    expect(ok(applicationKeyCreateSchema, { kid: "k", publicKeyPem: "" })).toBe(false);
+  });
+  it("retire defaults grace", () => {
+    expect(applicationKeyRetireSchema.parse({}).graceSeconds).toBe(DEFAULTS.SECRET_GRACE_SECONDS);
+    expect(ok(applicationKeyRetireSchema, { graceSeconds: 604801 })).toBe(false);
   });
 });
