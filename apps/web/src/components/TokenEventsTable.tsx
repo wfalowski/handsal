@@ -41,17 +41,20 @@ function CopyJti({ jti }: { jti: string }) {
 export function TokenEventsTable({
   events,
   appNames,
+  agentIds,
 }: {
   events: TokenEventDto[];
   appNames: Map<string, string>;
+  agentIds: Set<string>;
 }) {
   return (
-    <Table minWidth={900}>
+    <Table minWidth={1000}>
       <thead>
         <tr>
           <Th>Time</Th>
           <Th>Outcome</Th>
           <Th>Client</Th>
+          <Th>Agent</Th>
           <Th>Audience</Th>
           <Th>Scopes</Th>
           <Th>Token ID</Th>
@@ -75,6 +78,13 @@ export function TokenEventsTable({
                 ) : (
                   <code className="font-mono text-[13px]">{e.applicationClientId ?? "—"}</code>
                 )}
+              </Td>
+              <Td className="whitespace-nowrap text-body text-sm">
+                {e.applicationId && agentIds.has(e.applicationId)
+                  ? e.actorSub
+                    ? `agent · for ${e.actorSub}`
+                    : "agent"
+                  : null}
               </Td>
               <Td className="text-body">{e.audience?.replace(/^https?:\/\//, "") ?? "—"}</Td>
               <Td>

@@ -3,9 +3,10 @@ import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { EmptyState } from "../components/EmptyState";
+import { RecentTasks } from "../components/RecentTasks";
 import { StatTile } from "../components/StatTile";
 import { TokenEventsTable } from "../components/TokenEventsTable";
-import { useTokenApps, useTokenEvents, useTokenStats } from "../lib/queries";
+import { useAgentAppIds, useTokenApps, useTokenEvents, useTokenStats } from "../lib/queries";
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -15,8 +16,15 @@ const FILTERS = [
 type Filter = (typeof FILTERS)[number]["id"];
 
 export const Route = createFileRoute("/t/$tenantId/tokens")({
-  validateSearch: (s: Record<string, unknown>): { applicationId?: string; filter?: Filter } => ({
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): {
+    applicationId?: string;
+    taskId?: string;
+    filter?: Filter;
+  } => ({
     applicationId: typeof s.applicationId === "string" ? s.applicationId : undefined,
+    taskId: typeof s.taskId === "string" && s.taskId ? s.taskId.slice(0, 128) : undefined,
     filter: FILTERS.some((f) => f.id === s.filter) ? (s.filter as Filter) : undefined,
   }),
   component: TokensPage,
@@ -24,7 +32,7 @@ export const Route = createFileRoute("/t/$tenantId/tokens")({
 
 function TokensPage() {
   const { tenantId } = Route.useParams();
-  const { applicationId, filter = "all" } = Route.useSearch();
+  const { applicationId, taskId, filter = "all" } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
 
   const [input, setInput] = useState("");
@@ -34,7 +42,7 @@ function TokensPage() {
     return () => clearTimeout(t);
   }, [input]);
 
-  const common = { applicationId, q: q || undefined };
+  const common = { applicationId, taskId, q: q || undefined };
   // The API takes a single `outcome`, so "Needs attention" = denied + revoked: two queries merged
   // by createdAt desc. shortcut: each stream paginates independently, fine for an activity feed.
   const attention = filter === "attention";
@@ -45,6 +53,7 @@ function TokensPage() {
   const revoked = useTokenEvents(tenantId, { ...common, outcome: "revoked", enabled: attention });
   const stats = useTokenStats(tenantId);
   const apps = useTokenApps(tenantId);
+  const agents = useAgentAppIds(tenantId);
 
   const queries = attention ? [main, revoked] : [main];
   const events = queries
@@ -56,7 +65,7 @@ function TokensPage() {
   const appNames = apps.data ?? new Map<string, string>();
   const s = stats.data;
 
-  const setSearch = (next: { applicationId?: string; filter?: Filter }) =>
+  const setSearch = (next: { applicationId?: string; taskId?: string; filter?: Filter }) =>
     navigate({ search: (prev) => ({ ...prev, ...next }), replace: true });
 
   const delta =
@@ -104,6 +113,12 @@ function TokensPage() {
         />
       </div>
 
+      <RecentTasks
+        tenantId={tenantId}
+        selected={taskId}
+        onSelect={(id) => setSearch({ taskId: id })}
+      />
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative max-w-[360px] flex-1 basis-[260px]">
           <label htmlFor="token-q" className="sr-only">
@@ -148,6 +163,17 @@ function TokensPage() {
             <span aria-hidden="true">×</span>
           </button>
         )}
+        {taskId && (
+          <button
+            type="button"
+            onClick={() => setSearch({ taskId: undefined })}
+            aria-label="Remove task filter"
+            className="inline-flex h-8 items-center gap-2 rounded-full bg-hover pr-3 pl-3 text-[13px]"
+          >
+            Task: <code className="font-mono">{taskId}</code>
+            <span aria-hidden="true">×</span>
+          </button>
+        )}
         <span className="ml-auto inline-flex items-center gap-2 text-[13px] text-muted">
           <span
             aria-hidden="true"
@@ -168,7 +194,11 @@ function TokensPage() {
         />
       ) : (
         <>
-          <TokenEventsTable events={events} appNames={appNames} />
+          <TokenEventsTable
+            events={events}
+            appNames={appNames}
+            agentIds={agents.data ?? new Set<string>()}
+          />
           {hasNext && (
             <div className="flex justify-center">
               <Button

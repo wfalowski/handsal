@@ -4,6 +4,7 @@ import type {
   ResourceDto,
   ScopeDto,
   SigningKeyDto,
+  TaskSummaryDto,
   TenantDto,
   TenantRole,
   TokenEventDto,
@@ -118,6 +119,7 @@ export function useJwksHealth({ slug, issuer }: { slug: string; issuer: string }
 export type TokenEventParams = {
   outcome?: "issued" | "denied" | "revoked";
   applicationId?: string;
+  taskId?: string;
   q?: string;
   enabled?: boolean;
 };
@@ -535,5 +537,36 @@ export function useRemoveMember(tenantId: string) {
     mutationFn: (adminUserId: string) =>
       api<void>(`/api/tenants/${tenantId}/members/${adminUserId}`, { method: "DELETE" }),
     onSuccess: invalidate,
+  });
+}
+
+// --- tokens: recent tasks (Task 6.6)
+export function useTasks(
+  tenantId: string,
+  { applicationId, limit }: { applicationId?: string; limit?: number } = {},
+) {
+  return useQuery({
+    queryKey: ["tasks", { tenantId, applicationId }],
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      if (applicationId) sp.set("applicationId", applicationId);
+      if (limit) sp.set("limit", String(limit));
+      return api<{ items: TaskSummaryDto[] }>(`/api/tenants/${tenantId}/token-events/tasks?${sp}`);
+    },
+    refetchInterval: 5000,
+    select: (d) => d.items,
+  });
+}
+
+/** Ids of agent applications, for the events table Agent column (the event DTO carries no kind). */
+export function useAgentAppIds(tenantId: string) {
+  return useQuery({
+    queryKey: ["token-app-kinds", { tenantId }],
+    queryFn: () =>
+      api<{ items: { id: string; kind: "service" | "agent" }[] }>(
+        `/api/tenants/${tenantId}/applications`,
+      ),
+    staleTime: 30_000,
+    select: (d) => new Set(d.items.filter((a) => a.kind === "agent").map((a) => a.id)),
   });
 }
