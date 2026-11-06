@@ -145,6 +145,9 @@ export function useTokenApps(tenantId: string) {
       api<{ items: { id: string; name: string }[] }>(`/api/tenants/${tenantId}/applications`),
     staleTime: 30_000,
     select: (d) => new Map(d.items.map((a) => [a.id, a.name])),
+  });
+}
+
 // --- applications (Task 4.2)
 export type ApplicationStatusFilter = "active" | "needs_attention";
 export type ApplicationListItem = ApplicationDto & { resourceCount: number; scopeNames: string[] };
