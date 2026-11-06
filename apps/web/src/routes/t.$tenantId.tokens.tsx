@@ -6,7 +6,7 @@ import { EmptyState } from "../components/EmptyState";
 import { RecentTasks } from "../components/RecentTasks";
 import { StatTile } from "../components/StatTile";
 import { TokenEventsTable } from "../components/TokenEventsTable";
-import { useAgentAppIds, useTokenApps, useTokenEvents, useTokenStats } from "../lib/queries";
+import { useTokenApps, useTokenEvents, useTokenStats } from "../lib/queries";
 
 const FILTERS = [
   { id: "all", label: "All" },
@@ -53,7 +53,6 @@ function TokensPage() {
   const revoked = useTokenEvents(tenantId, { ...common, outcome: "revoked", enabled: attention });
   const stats = useTokenStats(tenantId);
   const apps = useTokenApps(tenantId);
-  const agents = useAgentAppIds(tenantId);
 
   const queries = attention ? [main, revoked] : [main];
   const events = queries
@@ -62,7 +61,7 @@ function TokensPage() {
   const hasNext = queries.some((r) => r.hasNextPage);
   const fetching = queries.some((r) => r.isFetching);
   const loadingMore = queries.some((r) => r.isFetchingNextPage);
-  const appNames = apps.data ?? new Map<string, string>();
+  const appMap = apps.data ?? new Map<string, { name: string; kind: "service" | "agent" }>();
   const s = stats.data;
 
   const setSearch = (next: { applicationId?: string; taskId?: string; filter?: Filter }) =>
@@ -159,7 +158,7 @@ function TokensPage() {
             aria-label="Remove client filter"
             className="inline-flex h-8 items-center gap-2 rounded-full bg-hover pr-3 pl-3 text-[13px]"
           >
-            Client: {appNames.get(applicationId) ?? applicationId.slice(0, 8)}
+            Client: {appMap.get(applicationId)?.name ?? applicationId.slice(0, 8)}
             <span aria-hidden="true">×</span>
           </button>
         )}
@@ -194,11 +193,7 @@ function TokensPage() {
         />
       ) : (
         <>
-          <TokenEventsTable
-            events={events}
-            appNames={appNames}
-            agentIds={agents.data ?? new Set<string>()}
-          />
+          <TokenEventsTable events={events} apps={appMap} />
           {hasNext && (
             <div className="flex justify-center">
               <Button

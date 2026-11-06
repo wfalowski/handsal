@@ -1,7 +1,7 @@
 import type { ApplicationDto } from "@handsal/shared";
 import { AGENT_CIDRS_MAX, CIDR_REGEX } from "@handsal/shared/constants";
 import { useState } from "react";
-import { useApplicationPatch } from "../lib/queries";
+import { useApplicationUpdate } from "../lib/queries";
 import { Button } from "./Button";
 import { Input } from "./Input";
 import { useToast } from "./Toast";
@@ -16,7 +16,7 @@ type Props = { tenantId: string; app: ApplicationDto; canEdit: boolean };
 
 export function RuntimeBinding({ tenantId, app, canEdit }: Props) {
   const toast = useToast();
-  const update = useApplicationPatch(tenantId, app.id);
+  const update = useApplicationUpdate(tenantId, app.id);
   const saved = {
     runtime: app.agentRuntime ?? "",
     cidrs: (app.allowedCidrs ?? []).join(", "),

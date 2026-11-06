@@ -11,7 +11,7 @@ import { relativeTime } from "../lib/format";
 import {
   type ApplicationListItem,
   type ApplicationStatusFilter,
-  useApplicationsListByKind,
+  useApplicationsList,
   useMe,
 } from "../lib/queries";
 
@@ -57,7 +57,7 @@ function ApplicationsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const apps = useApplicationsListByKind(tenantId, {
+  const apps = useApplicationsList(tenantId, {
     q,
     status: filter === "all" || filter === "agents" ? undefined : filter,
     kind: filter === "agents" ? "agent" : undefined,

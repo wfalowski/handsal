@@ -153,14 +153,16 @@ export function useTokenStats(tenantId: string) {
   });
 }
 
-/** applicationId -> name, for the Client column and the filter chip. */
+/** applicationId -> name + kind, for the Client/Agent columns and the filter chip. */
 export function useTokenApps(tenantId: string) {
   return useQuery({
     queryKey: ["token-apps", { tenantId }],
     queryFn: () =>
-      api<{ items: { id: string; name: string }[] }>(`/api/tenants/${tenantId}/applications`),
+      api<{ items: { id: string; name: string; kind: "service" | "agent" }[] }>(
+        `/api/tenants/${tenantId}/applications`,
+      ),
     staleTime: 30_000,
-    select: (d) => new Map(d.items.map((a) => [a.id, a.name])),
+    select: (d) => new Map(d.items.map((a) => [a.id, { name: a.name, kind: a.kind }])),
   });
 }
 
@@ -180,25 +182,6 @@ export type ApplicationDetail = {
   agentBudgetUsed: number | null;
 };
 export type ResourceWithScopes = ResourceDto & { scopes: ScopeDto[] };
-
-export function useApplicationsList(
-  tenantId: string,
-  filters: { q: string; status?: ApplicationStatusFilter },
-) {
-  return useQuery({
-    queryKey: ["applications", { tenantId, ...filters }],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (filters.q) params.set("q", filters.q);
-      if (filters.status) params.set("status", filters.status);
-      const qs = params.size ? `?${params}` : "";
-      return (
-        await api<{ items: ApplicationListItem[] }>(`/api/tenants/${tenantId}/applications${qs}`)
-      ).items;
-    },
-    placeholderData: keepPreviousData,
-  });
-}
 
 export function useApplicationDetail(tenantId: string, appId: string) {
   return useQuery({
@@ -234,38 +217,6 @@ function useApplicationInvalidate(tenantId: string) {
       queryClient.invalidateQueries({ queryKey: ["applications"] }),
       queryClient.invalidateQueries({ queryKey: ["application", { tenantId }] }),
     ]);
-}
-
-export function useApplicationCreate(tenantId: string) {
-  const invalidate = useApplicationInvalidate(tenantId);
-  return useMutation({
-    mutationFn: (input: {
-      name: string;
-      description?: string;
-      tokenEndpointAuthMethod?: ApplicationDto["tokenEndpointAuthMethod"];
-      tokenTtlSeconds?: number;
-    }) =>
-      api<{ application: ApplicationDto; clientSecret: string }>(
-        `/api/tenants/${tenantId}/applications`,
-        { method: "POST", body: input },
-      ),
-    onSuccess: invalidate,
-  });
-}
-
-export function useApplicationUpdate(tenantId: string, appId: string) {
-  const invalidate = useApplicationInvalidate(tenantId);
-  return useMutation({
-    mutationFn: (input: {
-      tokenEndpointAuthMethod?: ApplicationDto["tokenEndpointAuthMethod"];
-      tokenTtlSeconds?: number | null;
-    }) =>
-      api<ApplicationDto>(`/api/tenants/${tenantId}/applications/${appId}`, {
-        method: "PATCH",
-        body: input,
-      }),
-    onSuccess: invalidate,
-  });
 }
 
 export function useApplicationSetStatus(tenantId: string, appId: string) {
@@ -569,19 +520,6 @@ export function useTasks(
   });
 }
 
-/** Ids of agent applications, for the events table Agent column (the event DTO carries no kind). */
-export function useAgentAppIds(tenantId: string) {
-  return useQuery({
-    queryKey: ["token-app-kinds", { tenantId }],
-    queryFn: () =>
-      api<{ items: { id: string; kind: "service" | "agent" }[] }>(
-        `/api/tenants/${tenantId}/applications`,
-      ),
-    staleTime: 30_000,
-    select: (d) => new Set(d.items.filter((a) => a.kind === "agent").map((a) => a.id)),
-  });
-}
-
 // --- applications: keys + agents (Tasks 6.1/6.2)
 export type AgentFields = {
   agentRuntime?: string | null;
@@ -595,8 +533,7 @@ export type ApplicationWriteInput = AgentFields & {
   tokenTtlSeconds?: number | null;
 };
 
-/** Like useApplicationsList, with the `kind` filter. */
-export function useApplicationsListByKind(
+export function useApplicationsList(
   tenantId: string,
   filters: { q: string; status?: ApplicationStatusFilter; kind?: "service" | "agent" },
 ) {
@@ -616,8 +553,7 @@ export function useApplicationsListByKind(
   });
 }
 
-/** Create accepting `kind` and the agent fields. */
-export function useApplicationCreateWithKind(tenantId: string) {
+export function useApplicationCreate(tenantId: string) {
   const invalidate = useApplicationInvalidate(tenantId);
   return useMutation({
     mutationFn: (
@@ -635,8 +571,7 @@ export function useApplicationCreateWithKind(tenantId: string) {
   });
 }
 
-/** PATCH accepting the agent fields. */
-export function useApplicationPatch(tenantId: string, appId: string) {
+export function useApplicationUpdate(tenantId: string, appId: string) {
   const invalidate = useApplicationInvalidate(tenantId);
   return useMutation({
     mutationFn: (input: ApplicationWriteInput) =>

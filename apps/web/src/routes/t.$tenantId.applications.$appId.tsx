@@ -23,8 +23,8 @@ import {
   useApplicationDelete,
   useApplicationDetail,
   useApplicationKeys,
-  useApplicationPatch,
   useApplicationSetStatus,
+  useApplicationUpdate,
   useGrantsResources,
   useMe,
   useTenant,
@@ -342,7 +342,7 @@ function Credentials({
   canEdit: boolean;
 }) {
   const toast = useToast();
-  const update = useApplicationPatch(tenantId, app.id);
+  const update = useApplicationUpdate(tenantId, app.id);
   const keys = useApplicationKeys(tenantId, app.id);
   const [registering, setRegistering] = useState(false);
   const isAgent = app.kind === "agent";

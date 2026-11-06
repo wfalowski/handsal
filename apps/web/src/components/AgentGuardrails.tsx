@@ -7,7 +7,7 @@ import {
   AGENT_TTL_OPTIONS,
 } from "@handsal/shared/constants";
 import { useState } from "react";
-import { useApplicationPatch } from "../lib/queries";
+import { useApplicationUpdate } from "../lib/queries";
 import { SELECT_CLASS } from "./ApplicationForm";
 import { Button } from "./Button";
 import { Input } from "./Input";
@@ -27,7 +27,7 @@ type Props = {
 
 export function AgentGuardrails({ tenantId, app, budgetUsed, canEdit }: Props) {
   const toast = useToast();
-  const update = useApplicationPatch(tenantId, app.id);
+  const update = useApplicationUpdate(tenantId, app.id);
   const saved = {
     ttl: app.tokenTtlSeconds === null ? "" : String(app.tokenTtlSeconds),
     max: String(app.maxScopesPerToken ?? ""),

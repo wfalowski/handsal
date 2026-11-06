@@ -2,7 +2,7 @@ import type { ApplicationDto } from "@handsal/shared";
 import { AGENT_TTL_OPTIONS } from "@handsal/shared/constants";
 import { type FormEvent, useState } from "react";
 import { ApiRequestError } from "../lib/api";
-import { useApplicationCreateWithKind } from "../lib/queries";
+import { useApplicationCreate } from "../lib/queries";
 import { Button } from "./Button";
 import { Dialog } from "./Dialog";
 import { Input } from "./Input";
@@ -134,7 +134,7 @@ function Form({
   onCreated: (app: ApplicationDto, secret: string) => void;
 }) {
   const toast = useToast();
-  const create = useApplicationCreateWithKind(tenantId);
+  const create = useApplicationCreate(tenantId);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [method, setMethod] = useState<AuthMethod>("client_secret_basic");

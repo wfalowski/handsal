@@ -57,12 +57,10 @@ function CopyJti({ jti }: { jti: string }) {
 
 export function TokenEventsTable({
   events,
-  appNames,
-  agentIds,
+  apps,
 }: {
   events: TokenEventDto[];
-  appNames: Map<string, string>;
-  agentIds: Set<string>;
+  apps: Map<string, { name: string; kind: "service" | "agent" }>;
 }) {
   return (
     <Table minWidth={1000}>
@@ -80,7 +78,7 @@ export function TokenEventsTable({
       </thead>
       <tbody>
         {events.map((e) => {
-          const name = e.applicationId ? appNames.get(e.applicationId) : undefined;
+          const name = e.applicationId ? apps.get(e.applicationId)?.name : undefined;
           return (
             <tr key={e.id}>
               <Td className="whitespace-nowrap font-mono text-[13px] text-muted">
@@ -97,7 +95,7 @@ export function TokenEventsTable({
                 )}
               </Td>
               <Td className="whitespace-nowrap text-body text-sm">
-                {e.applicationId && agentIds.has(e.applicationId)
+                {e.applicationId && apps.get(e.applicationId)?.kind === "agent"
                   ? e.actorSub
                     ? `agent · for ${e.actorSub}`
                     : "agent"
