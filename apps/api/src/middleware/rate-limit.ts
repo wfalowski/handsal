@@ -1,5 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 import type { AppEnv } from "../app.js";
+import { assertionClientId } from "../services/client-auth.service.js";
 import { getClientIp } from "../utils/client-ip.js";
 import { logSecurityEvent, SecurityEvent, SecuritySeverity } from "../utils/security-logger.js";
 import { type KVStore, MemoryStore } from "../utils/store.js";
@@ -38,7 +39,10 @@ export function ipKey(c: Context): string {
  * token route sets it before this runs).
  */
 export function clientIdKey(c: Context<AppEnv>): string {
-  const clientId = basicClientId(c.req.header("Authorization")) ?? c.var.formBody?.client_id;
+  const clientId =
+    basicClientId(c.req.header("Authorization")) ??
+    c.var.formBody?.client_id ??
+    assertionClientId(c.var.formBody?.client_assertion);
   const ip = getClientIp(c);
   return clientId ? `client:${clientId}|ip:${ip}` : `ip:${ip}`;
 }

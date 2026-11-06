@@ -1,11 +1,22 @@
-import { applications, db, pool, runMigrations } from "@handsal/db";
+import { applicationKeys, applications, db, pool, runMigrations } from "@handsal/db";
 import { OAUTH_ERRORS } from "@handsal/shared";
 import { eq } from "drizzle-orm";
+import { generateKeyPair, SignJWT } from "jose";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { OAuthError } from "../middleware/error-handler.js";
-import { createApplication, createTenant, truncateAll } from "../test/factories.js";
+import {
+  createApplication,
+  createApplicationKey,
+  createTenant,
+  signClientAssertion,
+  truncateAll,
+} from "../test/factories.js";
 import { rotateSecret, setApplicationStatus } from "./application.service.js";
-import { authenticateClient } from "./client-auth.service.js";
+import {
+  assertionClientId,
+  authenticateClient,
+  authenticateClientAssertion,
+} from "./client-auth.service.js";
 
 const IP = "203.0.113.7";
 
@@ -190,5 +201,147 @@ describe("authenticateClient", () => {
       expect(await failureReason(auth(oldSecret))).toBe("bad_secret");
       await expect(auth(newSecret)).resolves.toBeDefined();
     });
+  });
+});
+
+describe("authenticateClientAssertion (private_key_jwt)", () => {
+  async function setup() {
+    const tenant = await createTenant();
+    const { application } = await createApplication(tenant.id, {
+      tokenEndpointAuthMethod: "private_key_jwt",
+    });
+    const { key, privateKey } = await createApplicationKey(tenant.id, application.id);
+    const sign = (over: Partial<Parameters<typeof signClientAssertion>[1]> = {}) =>
+      signClientAssertion(privateKey, {
+        clientId: application.clientId,
+        kid: key.kid,
+        tenantSlug: tenant.slug,
+        ...over,
+      });
+    const auth = async (assertion: string | Promise<string>, claimedClientId?: string) =>
+      authenticateClientAssertion(tenant, await assertion, IP, claimedClientId);
+    return { tenant, application, key, sign, auth };
+  }
+
+  const now = () => Math.floor(Date.now() / 1000);
+
+  it("accepts an assertion signed by an active key and strips secret hashes", async () => {
+    const { application, sign, auth } = await setup();
+    const { application: result } = await auth(sign());
+    expect(result.id).toBe(application.id);
+    expect(result).not.toHaveProperty("clientSecretHash");
+    expect(assertionClientId(await sign())).toBe(application.clientId);
+  });
+
+  it("rejects aud = issuer instead of the token endpoint", async () => {
+    const { tenant, sign, auth } = await setup();
+    const aud = `https://test.example.com/t/${tenant.slug}`;
+    expect(await failureReason(auth(sign({ claims: { aud } })))).toBe("bad_assertion");
+  });
+
+  it("rejects a replayed jti", async () => {
+    const { sign, auth } = await setup();
+    const assertion = await sign();
+    await expect(auth(assertion)).resolves.toBeDefined();
+    expect(await failureReason(auth(assertion))).toBe("assertion_replayed");
+  });
+
+  it("rejects exp beyond the max lifetime, and an expired assertion", async () => {
+    const { sign, auth } = await setup();
+    expect(await failureReason(auth(sign({ claims: { exp: now() + 600 } })))).toBe("bad_assertion");
+    const expired = sign({ claims: { iat: now() - 240, exp: now() - 120 } });
+    expect(await failureReason(auth(expired))).toBe("assertion_expired");
+  });
+
+  it("rejects missing jti or exp, and iat in the future", async () => {
+    const { sign, auth } = await setup();
+    expect(await failureReason(auth(sign({ claims: { jti: undefined } })))).toBe("bad_assertion");
+    expect(await failureReason(auth(sign({ claims: { exp: undefined } })))).toBe("bad_assertion");
+    expect(await failureReason(auth(sign({ claims: { iat: now() + 120 } })))).toBe("bad_assertion");
+  });
+
+  it("rejects iss !== sub", async () => {
+    const { sign, auth } = await setup();
+    expect(await failureReason(auth(sign({ claims: { sub: "someone-else" } })))).toBe(
+      "bad_assertion",
+    );
+  });
+
+  it("rejects a kid belonging to another application's key", async () => {
+    const { tenant, sign, auth } = await setup();
+    const other = await createApplication(tenant.id, {
+      tokenEndpointAuthMethod: "private_key_jwt",
+    });
+    const { key: otherKey } = await createApplicationKey(tenant.id, other.application.id);
+    expect(await failureReason(auth(sign({ kid: otherKey.kid })))).toBe("unknown_assertion_key");
+  });
+
+  it("rejects an assertion for a client of another tenant", async () => {
+    const { sign } = await setup();
+    const otherTenant = await createTenant();
+    const assertion = await sign({ tenantSlug: otherTenant.slug });
+    expect(await failureReason(authenticateClientAssertion(otherTenant, assertion, IP))).toBe(
+      "unknown_client",
+    );
+  });
+
+  it("accepts a retiring key before retires_at and rejects it after", async () => {
+    const { key, sign, auth } = await setup();
+    const setRetiresAt = (ms: number) =>
+      db
+        .update(applicationKeys)
+        .set({ status: "retiring", retiresAt: new Date(Date.now() + ms) })
+        .where(eq(applicationKeys.id, key.id));
+    await setRetiresAt(60_000);
+    await expect(auth(sign())).resolves.toBeDefined();
+    await setRetiresAt(-1000);
+    expect(await failureReason(auth(sign()))).toBe("unknown_assertion_key");
+  });
+
+  it("rejects an assertion from an application registered for client secrets", async () => {
+    const tenant = await createTenant();
+    const { application } = await createApplication(tenant.id);
+    const { key, privateKey } = await createApplicationKey(tenant.id, application.id);
+    const assertion = signClientAssertion(privateKey, {
+      clientId: application.clientId,
+      kid: key.kid,
+      tenantSlug: tenant.slug,
+    });
+    expect(await failureReason(authenticateClientAssertion(tenant, await assertion, IP))).toBe(
+      "auth_method_mismatch",
+    );
+  });
+
+  it("rejects a secret from an application registered for private_key_jwt", async () => {
+    const tenant = await createTenant();
+    const { application, clientSecret } = await createApplication(tenant.id, {
+      tokenEndpointAuthMethod: "private_key_jwt",
+    });
+    const creds = { clientId: application.clientId, clientSecret, viaBasic: true };
+    expect(await failureReason(authenticateClient(tenant, creds, IP))).toBe("auth_method_mismatch");
+  });
+
+  it("rejects an RS256-signed assertion and an unsigned token", async () => {
+    const { application, key, auth } = await setup();
+    const { privateKey } = await generateKeyPair("RS256");
+    const claims = { iss: application.clientId, sub: application.clientId, jti: "x" };
+    const rs = new SignJWT(claims)
+      .setProtectedHeader({ alg: "RS256", kid: key.kid })
+      .setExpirationTime("1m")
+      .sign(privateKey);
+    expect(await failureReason(auth(rs))).toBe("bad_assertion");
+    expect(await failureReason(auth("not-a-jwt"))).toBe("bad_assertion");
+  });
+
+  it("rejects a disabled application only after the assertion verified", async () => {
+    const { tenant, application, sign, auth } = await setup();
+    await setApplicationStatus(tenant.id, application.id, "disabled");
+    expect(await failureReason(auth(sign()))).toBe("client_disabled");
+  });
+
+  it("rejects a client_id that differs from iss", async () => {
+    const { application, sign, auth } = await setup();
+    expect(await failureReason(auth(sign(), "other-client"))).toBe("bad_assertion");
+    await expect(auth(sign(), application.clientId)).resolves.toBeDefined();
   });
 });

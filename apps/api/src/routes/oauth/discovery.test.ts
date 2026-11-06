@@ -5,7 +5,7 @@ import { createResourceWithScopes, createTenant, truncateAll } from "../../test/
 
 const app = createApp({ readinessCheck: async () => {} });
 const BASE = "https://test.example.com";
-const AUTH = ["client_secret_basic", "client_secret_post"];
+const AUTH = ["client_secret_basic", "client_secret_post", "private_key_jwt"];
 
 beforeAll(async () => {
   await runMigrations();

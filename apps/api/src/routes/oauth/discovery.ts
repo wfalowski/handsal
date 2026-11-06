@@ -4,7 +4,7 @@ import { type Context, Hono } from "hono";
 import type { AppEnv } from "../../app.js";
 import { env } from "../../env.js";
 
-const AUTH_METHODS = ["client_secret_basic", "client_secret_post"];
+const AUTH_METHODS = ["client_secret_basic", "client_secret_post", "private_key_jwt"];
 
 /** RFC 8414 / OIDC discovery document, served at both `.well-known` names. Mounted at `/.well-known`. */
 export function createDiscoveryRoutes() {

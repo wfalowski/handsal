@@ -10,9 +10,11 @@ import { tenantResolver } from "../../middleware/tenant-resolver.js";
 import { ensureActiveKey, getJwks } from "../../services/signing-key.service.js";
 import {
   createApplication,
+  createApplicationKey,
   createResourceWithScopes,
   createTenant,
   grant,
+  signClientAssertion,
   truncateAll,
 } from "../../test/factories.js";
 import { formRequest } from "../../test/helpers.js";
@@ -420,5 +422,137 @@ describe("POST /t/:slug/oauth/token", () => {
     } finally {
       env.TRUST_PROXY = prevTrustProxy;
     }
+  });
+});
+
+describe("private_key_jwt client authentication", () => {
+  const JWT_BEARER = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
+
+  async function pkSetup() {
+    const tenant = await createTenant();
+    const { application, clientSecret } = await createApplication(tenant.id, {
+      tokenEndpointAuthMethod: "private_key_jwt",
+    });
+    const { scopes } = await createResourceWithScopes(tenant.id, PAYMENTS, ["payments:read"]);
+    await grant(tenant.id, application.id, [scopes[0].id]);
+    const { key, privateKey } = await createApplicationKey(tenant.id, application.id);
+    const sign = (claims: Record<string, unknown> = {}) =>
+      signClientAssertion(privateKey, {
+        clientId: application.clientId,
+        kid: key.kid,
+        tenantSlug: tenant.slug,
+        claims,
+      });
+    const fields = async (over: Record<string, string> = {}) => ({
+      grant_type: "client_credentials",
+      resource: PAYMENTS,
+      client_assertion_type: JWT_BEARER,
+      client_assertion: await sign(),
+      ...over,
+    });
+    return { tenant, application, clientSecret, sign, fields };
+  }
+
+  async function expectInvalidClient(res: Response, reason: string) {
+    expect(res.status).toBe(401);
+    expect(res.headers.get("WWW-Authenticate")).toBe('Basic realm="handsal"');
+    expect(await res.json()).toEqual({
+      error: "invalid_client",
+      error_description: "Invalid client credentials",
+    });
+    const rows = await events();
+    expect(rows.at(-1)).toMatchObject({ outcome: "denied", reason });
+  }
+
+  it("issues a token for an assertion signed by a registered key", async () => {
+    const { tenant, application, fields } = await pkSetup();
+    const res = await formRequest(app, tokenUrl(tenant.slug), await fields());
+    expect(res.status).toBe(200);
+    const { access_token } = await res.json();
+    expect(decodeJwt(access_token).client_id).toBe(application.clientId);
+    const [event] = await events();
+    expect(event).toMatchObject({ outcome: "issued", applicationClientId: application.clientId });
+  });
+
+  it("aud = issuer → 401 bad_assertion, recorded under the assertion's client id", async () => {
+    const { tenant, application, sign, fields } = await pkSetup();
+    const assertion = await sign({ aud: `https://test.example.com/t/${tenant.slug}` });
+    const res = await formRequest(
+      app,
+      tokenUrl(tenant.slug),
+      await fields({ client_assertion: assertion }),
+    );
+    await expectInvalidClient(res, "bad_assertion");
+    expect((await events())[0].applicationClientId).toBe(application.clientId);
+  });
+
+  it("the same assertion twice → 200 then 401 assertion_replayed", async () => {
+    const { tenant, fields } = await pkSetup();
+    const body = await fields();
+    expect((await formRequest(app, tokenUrl(tenant.slug), body)).status).toBe(200);
+    await expectInvalidClient(
+      await formRequest(app, tokenUrl(tenant.slug), body),
+      "assertion_replayed",
+    );
+  });
+
+  it("Basic credentials for a private_key_jwt client → 401 auth_method_mismatch", async () => {
+    const { tenant, application, clientSecret } = await pkSetup();
+    const res = await formRequest(
+      app,
+      tokenUrl(tenant.slug),
+      { grant_type: "client_credentials", resource: PAYMENTS },
+      { Authorization: basic(application.clientId, clientSecret) },
+    );
+    await expectInvalidClient(res, "auth_method_mismatch");
+  });
+
+  it("client_id different from iss → 401", async () => {
+    const { tenant, fields } = await pkSetup();
+    const res = await formRequest(
+      app,
+      tokenUrl(tenant.slug),
+      await fields({ client_id: "someone-else" }),
+    );
+    await expectInvalidClient(res, "bad_assertion");
+  });
+
+  it("malformed assertion parameters → 400 invalid_request", async () => {
+    const { tenant, application, clientSecret, fields } = await pkSetup();
+    const cases: [Record<string, string>, Record<string, string>][] = [
+      [await fields({ client_secret: clientSecret }), {}],
+      [await fields(), { Authorization: basic(application.clientId, clientSecret) }],
+      [await fields({ client_assertion_type: "urn:example:other" }), {}],
+      [{ grant_type: "client_credentials", resource: PAYMENTS, client_assertion: "x" }, {}],
+    ];
+    for (const [body, headers] of cases) {
+      const res = await formRequest(app, tokenUrl(tenant.slug), body, headers);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe("invalid_request");
+    }
+  });
+
+  it("a private_key_jwt client introspects and revokes its own token", async () => {
+    const { tenant, fields, sign } = await pkSetup();
+    const issued = await formRequest(app, tokenUrl(tenant.slug), await fields());
+    const { access_token } = await issued.json();
+    const authFields = async () => ({
+      client_assertion_type: JWT_BEARER,
+      client_assertion: await sign(),
+      token: access_token,
+    });
+
+    const introspected = await formRequest(
+      app,
+      `/t/${tenant.slug}/oauth/introspect`,
+      await authFields(),
+    );
+    expect(introspected.status).toBe(200);
+    expect((await introspected.json()).active).toBe(true);
+
+    const revoked = await formRequest(app, `/t/${tenant.slug}/oauth/revoke`, await authFields());
+    expect(revoked.status).toBe(200);
+    const after = await formRequest(app, `/t/${tenant.slug}/oauth/introspect`, await authFields());
+    expect((await after.json()).active).toBe(false);
   });
 });

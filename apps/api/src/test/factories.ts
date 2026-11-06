@@ -3,6 +3,13 @@ import { applicationGrants, db, resources, scopes, tenantMembers, tenants } from
 import type { TenantRole } from "@handsal/shared";
 import { sql } from "drizzle-orm";
 import {
+  exportSPKI,
+  generateKeyPair,
+  type JWTHeaderParameters,
+  type JWTPayload,
+  SignJWT,
+} from "jose";
+import {
   type AdminUserCreateInput,
   createAdminUser as createAdminUserService,
 } from "../services/admin-user.service.js";
@@ -10,6 +17,7 @@ import {
   type ApplicationCreateInput,
   createApplication as createApplicationService,
 } from "../services/application.service.js";
+import { createApplicationKey as createApplicationKeyService } from "../services/application-key.service.js";
 
 const TABLES = [
   "token_events",
@@ -86,4 +94,39 @@ export async function createAdminUser(over: Partial<AdminUserCreateInput> = {}) 
 
 export async function addMember(tenantId: string, adminUserId: string, role: TenantRole) {
   await db.insert(tenantMembers).values({ tenantId, adminUserId, role });
+}
+
+/** Registers a fresh ES256 key for an application; returns the row and its private key. */
+export async function createApplicationKey(tenantId: string, appId: string, kid = `kid-${uniq()}`) {
+  const { publicKey, privateKey } = await generateKeyPair("ES256", { extractable: true });
+  const key = await createApplicationKeyService(tenantId, appId, {
+    kid,
+    publicKeyPem: await exportSPKI(publicKey),
+  });
+  return { key, privateKey };
+}
+
+/** Signs an RFC 7523 client assertion for `clientId`; `claims`/`header` override the defaults. */
+export async function signClientAssertion(
+  privateKey: CryptoKey,
+  opts: {
+    clientId: string;
+    kid: string;
+    tenantSlug: string;
+    claims?: JWTPayload;
+    header?: Partial<JWTHeaderParameters>;
+  },
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT({
+    iss: opts.clientId,
+    sub: opts.clientId,
+    aud: `${process.env.PUBLIC_URL}/t/${opts.tenantSlug}/oauth/token`,
+    jti: randomUUID(),
+    iat: now,
+    exp: now + 60,
+    ...opts.claims,
+  })
+    .setProtectedHeader({ alg: "ES256", kid: opts.kid, ...opts.header })
+    .sign(privateKey);
 }

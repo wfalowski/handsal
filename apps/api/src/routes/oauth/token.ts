@@ -1,4 +1,9 @@
-import { GRANT_TYPES, OAUTH_ERRORS, tokenRequestSchema } from "@handsal/shared";
+import {
+  CLIENT_ASSERTION_TYPES,
+  GRANT_TYPES,
+  OAUTH_ERRORS,
+  tokenRequestSchema,
+} from "@handsal/shared";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AppEnv } from "../../app.js";
 import { env } from "../../env.js";
@@ -6,7 +11,9 @@ import { OAuthError } from "../../middleware/error-handler.js";
 import { clientIdKey, ipKey, rateLimit } from "../../middleware/rate-limit.js";
 import {
   type AuthenticatedApplication,
+  assertionClientId,
   authenticateClient,
+  authenticateClientAssertion,
 } from "../../services/client-auth.service.js";
 import { issueToken } from "../../services/token.service.js";
 import { recordTokenEvent } from "../../services/token-event.service.js";
@@ -40,8 +47,8 @@ function invalidRequest(description: string): OAuthError {
 }
 
 /**
- * Authenticate the caller of a form-encoded endpoint that only needs client auth
- * (introspect, revoke): Basic or body credentials per the app's registered method.
+ * Authenticate the caller of a form-encoded endpoint (token, introspect, revoke):
+ * a private_key_jwt assertion, or Basic/body credentials per the app's registered method.
  * Requires `parseFormBody` to have run.
  */
 export async function authenticateFormClient(
@@ -50,6 +57,26 @@ export async function authenticateFormClient(
   const body = c.var.formBody;
   if (!body) throw invalidRequest("Content-Type must be application/x-www-form-urlencoded");
   const basic = parseBasicAuth(c.req.header("Authorization"));
+  const { client_assertion: assertion, client_assertion_type: assertionType } = body;
+  if (assertion !== undefined || assertionType !== undefined) {
+    if (assertion === undefined || assertionType === undefined) {
+      throw invalidRequest("client_assertion and client_assertion_type must be sent together");
+    }
+    if (assertionType !== CLIENT_ASSERTION_TYPES.JWT_BEARER) {
+      throw invalidRequest("Unsupported client_assertion_type");
+    }
+    // RFC 6749 §2.3: a client must not use more than one authentication method.
+    if (basic || body.client_secret !== undefined) {
+      throw invalidRequest("Multiple client authentication methods");
+    }
+    const { application } = await authenticateClientAssertion(
+      c.var.tenant,
+      assertion,
+      getClientIp(c),
+      body.client_id,
+    );
+    return application;
+  }
   // RFC 6749 §2.3: a client must not use more than one authentication method.
   if (basic && body.client_secret !== undefined) {
     throw invalidRequest("Multiple client authentication methods");
@@ -91,7 +118,8 @@ export function createTokenRoutes({
       const body = c.var.formBody;
       const sourceIp = getClientIp(c);
       const basic = parseBasicAuth(c.req.header("Authorization"));
-      const clientId = basic?.clientId ?? body?.client_id;
+      const clientId =
+        basic?.clientId ?? body?.client_id ?? assertionClientId(body?.client_assertion);
       let application: AuthenticatedApplication | undefined;
 
       try {
@@ -103,19 +131,7 @@ export function createTokenRoutes({
           throw new OAuthError(OAUTH_ERRORS.UNSUPPORTED_GRANT_TYPE, 400, "Unsupported grant_type");
         }
 
-        // RFC 6749 §2.3: a client must not use more than one authentication method.
-        if (basic && body.client_secret !== undefined) {
-          throw invalidRequest("Multiple client authentication methods");
-        }
-        const clientSecret = basic?.clientSecret ?? body.client_secret;
-        if (!clientId || !clientSecret) {
-          throw new OAuthError(OAUTH_ERRORS.INVALID_CLIENT, 401, "Client credentials are required");
-        }
-        ({ application } = await authenticateClient(
-          tenant,
-          { clientId, clientSecret, viaBasic: basic !== null },
-          sourceIp,
-        ));
+        application = await authenticateFormClient(c);
 
         // A missing or malformed resource is invalid_target, not a generic schema failure.
         if (!tokenRequestSchema.shape.resource.safeParse(body.resource).success) {
