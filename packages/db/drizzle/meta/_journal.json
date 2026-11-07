@@ -50,6 +50,13 @@
       "when": 1793955003759,
       "tag": "0006_misty_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794067007313,
+      "tag": "0007_admin_session_version",
+      "breakpoints": true
     }
   ]
 }

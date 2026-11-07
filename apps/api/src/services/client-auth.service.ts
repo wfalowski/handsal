@@ -37,8 +37,8 @@ export type ClientAuthFailureReason =
 // The private_key_jwt path is not timing-equalised; client ids are high-entropy and not secret.
 const DUMMY_HASH_PROMISE = hashSecret("handsal-dummy-secret-for-timing-safety");
 
-async function burnDummyVerify(secret: string): Promise<void> {
-  await verifySecret(secret, await DUMMY_HASH_PROMISE);
+async function burnDummyVerify(secret: string, lane: string): Promise<void> {
+  await verifySecret(secret, await DUMMY_HASH_PROMISE, lane);
 }
 
 function fail(
@@ -62,17 +62,17 @@ function fail(
   throw err;
 }
 
-async function secretMatches(app: ApplicationRow, secret: string): Promise<boolean> {
+async function secretMatches(app: ApplicationRow, secret: string, lane: string): Promise<boolean> {
   if (!app.clientSecretHash) {
-    await burnDummyVerify(secret);
+    await burnDummyVerify(secret, lane);
     return false;
   }
-  if (await verifySecret(secret, app.clientSecretHash)) return true;
+  if (await verifySecret(secret, app.clientSecretHash, lane)) return true;
   return (
     app.previousSecretHash !== null &&
     app.previousSecretExpiresAt !== null &&
     Date.now() < app.previousSecretExpiresAt.getTime() &&
-    verifySecret(secret, app.previousSecretHash)
+    verifySecret(secret, app.previousSecretHash, lane)
   );
 }
 
@@ -94,17 +94,17 @@ export async function authenticateClient(
     .limit(1);
 
   if (!app) {
-    await burnDummyVerify(clientSecret);
+    await burnDummyVerify(clientSecret, sourceIp);
     fail(tenant.id, clientId, sourceIp, "unknown_client");
   }
 
   const expectedMethod = viaBasic ? "client_secret_basic" : "client_secret_post";
   if (app.tokenEndpointAuthMethod !== expectedMethod) {
-    await burnDummyVerify(clientSecret);
+    await burnDummyVerify(clientSecret, sourceIp);
     fail(tenant.id, clientId, sourceIp, "auth_method_mismatch");
   }
 
-  if (!(await secretMatches(app, clientSecret))) {
+  if (!(await secretMatches(app, clientSecret, sourceIp))) {
     fail(tenant.id, clientId, sourceIp, "bad_secret");
   }
 

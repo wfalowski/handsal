@@ -348,6 +348,27 @@ describe("exchangeToken", () => {
     ).toEqual({ code: "invalid_grant", status: 400 });
   });
 
+  it("delegated lifetime is capped by a subject that expires before the agent TTL", async () => {
+    const { tenant, agent } = await setup({ agent: { tokenTtlSeconds: 900 } });
+    const now = Math.floor(Date.now() / 1000);
+    const short = await signIdpToken({ scope: "tickets:read", exp: now + 20 });
+    const res = await exchangeToken(tenant, agent, { subjectToken: short, audience: AUD }, ctx);
+    expect(res.expires_in).toBeGreaterThanOrEqual(15);
+    expect(res.expires_in).toBeLessThanOrEqual(20);
+    const issued = decodeJwt(res.access_token);
+    expect(issued.exp).toBe((issued.iat as number) + res.expires_in);
+    expect(issued.exp).toBeLessThanOrEqual((decodeJwt(short).exp as number) + 1);
+
+    const long = await signIdpToken({ scope: "tickets:read", exp: now + 7200 });
+    const capped = await exchangeToken(tenant, agent, { subjectToken: long, audience: AUD }, ctx);
+    expect(capped.expires_in).toBe(900);
+
+    const dying = await signIdpToken({ scope: "tickets:read", exp: now });
+    expect(
+      await reasonOf(exchangeToken(tenant, agent, { subjectToken: dying, audience: AUD }, ctx)),
+    ).toEqual({ code: "invalid_grant", status: 400 });
+  });
+
   it("external JWT without exp → invalid_grant", async () => {
     const { tenant, agent } = await setup();
     const token = await signIdpToken({ scope: "tickets:read", exp: undefined });

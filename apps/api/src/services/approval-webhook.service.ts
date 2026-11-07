@@ -5,6 +5,7 @@ import { APPROVAL_WEBHOOK } from "@handsal/shared";
 import { env } from "../env.js";
 import { decryptPrivateKey } from "../utils/crypto.js";
 import { createLogger } from "../utils/logger.js";
+import { pinnedFetch } from "../utils/outbound-url.js";
 import type { Tenant } from "./tenant.service.js";
 
 const logger = createLogger("approval-webhook");
@@ -52,7 +53,7 @@ export async function notifyApprovalPending(tenant: Tenant, approval: ApprovalDt
     for (let attempt = 1; ; attempt++) {
       let failure: unknown;
       try {
-        const res = await fetch(url, {
+        const res = await pinnedFetch(url, {
           method: "POST",
           headers,
           body,

@@ -1,6 +1,6 @@
 import { adminUsers, db, tenantMembers, tenants } from "@handsal/db";
 import type { TenantRole } from "@handsal/shared";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { ApiError } from "../middleware/error-handler.js";
 import { hashSecret, verifySecret } from "../utils/crypto.js";
 import { issuerFor } from "./tenant.service.js";
@@ -84,6 +84,22 @@ export async function getAdminUser(id: string): Promise<AdminUser | null> {
 
 export async function touchLastLogin(id: string): Promise<void> {
   await db.update(adminUsers).set({ lastLoginAt: new Date() }).where(eq(adminUsers.id, id));
+}
+
+/**
+ * Invalidate every session cookie issued at `expectedVersion`.
+ * The compare-and-swap misses when a concurrent logout already bumped the row.
+ */
+export async function revokeAdminSessions(
+  userId: string,
+  expectedVersion: number,
+): Promise<boolean> {
+  const updated = await db
+    .update(adminUsers)
+    .set({ sessionVersion: sql`${adminUsers.sessionVersion} + 1` })
+    .where(and(eq(adminUsers.id, userId), eq(adminUsers.sessionVersion, expectedVersion)))
+    .returning({ id: adminUsers.id });
+  return updated.length > 0;
 }
 
 /** Tenants the user is a member of, with their role. */

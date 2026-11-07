@@ -9,6 +9,7 @@ import {
 } from "@handsal/shared";
 import { and, eq, inArray } from "drizzle-orm";
 import { createRemoteJWKSet, customFetch, decodeJwt, type JWTPayload, jwtVerify } from "jose";
+import { pinnedFetch } from "../utils/outbound-url.js";
 import type { AuthenticatedApplication } from "./client-auth.service.js";
 import { getGrantedScopesForAudience } from "./grant.service.js";
 import { introspectToken } from "./introspection.service.js";
@@ -34,7 +35,7 @@ function getRemoteJwks(tenantId: string, jwksUri: string) {
   if (!set) {
     set = createRemoteJWKSet(new URL(jwksUri), {
       // No redirects: a 3xx could send the fetch past the jwksUri destination guard.
-      [customFetch]: (url, options) => fetch(url, { ...options, redirect: "error" }),
+      [customFetch]: (url, options) => pinnedFetch(url, { ...options, redirect: "error" }),
     });
     if (remoteJwks.size >= MAX_REMOTE_JWKS) {
       const oldest = remoteJwks.keys().next().value;
@@ -58,6 +59,8 @@ interface Subject {
   act: Record<string, unknown> | undefined;
   /** null: the subject carries no scope claim at all. */
   scopes: string[] | null;
+  /** Subject credential expiry (seconds). The issued token must not outlive it. */
+  exp: number;
 }
 
 function scopesOf(payload: JWTPayload): string[] | null {
@@ -117,6 +120,7 @@ async function verifySubject(
       subKind,
       act: actOf(payload),
       scopes: scopesOf(payload),
+      exp: introspected.exp,
     };
   }
 
@@ -131,7 +135,9 @@ async function verifySubject(
       requiredClaims: ["exp"],
       clockTolerance: 5,
     });
-    if (typeof payload.sub !== "string" || !payload.sub) return null;
+    if (typeof payload.sub !== "string" || !payload.sub || typeof payload.exp !== "number") {
+      return null;
+    }
     return {
       classes: classesOf(SUB_KINDS.USER),
       sub: payload.sub,
@@ -139,6 +145,7 @@ async function verifySubject(
       act: undefined,
       // Matched by name against the agent's scopes on the target resource (docs/integration.md §8).
       scopes: scopesOf(payload),
+      exp: payload.exp,
     };
   } catch {
     return null;
@@ -229,8 +236,14 @@ export async function exchangeToken(
     );
   }
 
-  const ttl =
+  const configuredTtl =
     application.tokenTtlSeconds ?? resource.tokenTtlSeconds ?? tenant.defaultTokenTtlSeconds;
+  // Whole seconds left on the subject. No TTL_MIN floor: a 20s subject yields a ~20s token.
+  const subjectTtl = Math.floor(subject.exp - Date.now() / 1000);
+  if (subjectTtl < 1) {
+    deny(OAUTH_ERRORS.INVALID_GRANT, "Invalid subject_token", "invalid_subject_token");
+  }
+  const ttl = Math.min(configuredTtl, subjectTtl);
   // Most recent actor outermost (RFC 8693 §4.1).
   const act = subject.act
     ? { sub: application.clientId, act: subject.act }

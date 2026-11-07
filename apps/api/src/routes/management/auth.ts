@@ -8,13 +8,16 @@ import {
   csrfTokenFor,
   SESSION_COOKIE,
   setSessionCookie,
+  verifySessionToken,
 } from "../../middleware/admin-auth.js";
 import { ApiError } from "../../middleware/error-handler.js";
 import { ipKey, type RateLimitEntry, rateLimit } from "../../middleware/rate-limit.js";
 import {
   authenticateAdminUser,
+  getAdminUser,
   listAllTenantsAsOwner,
   listTenantsForUser,
+  revokeAdminSessions,
   touchLastLogin,
 } from "../../services/admin-user.service.js";
 import {
@@ -47,7 +50,8 @@ authRoutes.post(
     }
 
     await touchLastLogin(user.id);
-    const token = createSessionToken(user.id);
+    // Do not bump sessionVersion: other browsers stay logged in until one of them logs out.
+    const token = createSessionToken(user.id, Date.now(), user.sessionVersion);
     setSessionCookie(c, token);
     logSecurityEvent({
       ...extractRequestInfo(c),
@@ -63,9 +67,19 @@ authRoutes.post(
   },
 );
 
-// Stateless sessions: logout only clears the cookie; a copied token stays valid until exp.
-authRoutes.post("/logout", (c) => {
-  if (getCookie(c, SESSION_COOKIE)) {
+// A current cookie revokes every session (session_version + 1), then the cookie is cleared.
+// Missing, invalid, or already-stale cookies are cleared only — they must not bump the version.
+// No CSRF header: SameSite=Strict, so a cross-site POST does not include the cookie.
+authRoutes.post("/logout", async (c) => {
+  const token = getCookie(c, SESSION_COOKIE);
+  if (token) {
+    const session = verifySessionToken(token);
+    if (session) {
+      const user = await getAdminUser(session.sub);
+      if (user && user.sessionVersion === session.sv) {
+        await revokeAdminSessions(user.id, session.sv);
+      }
+    }
     logSecurityEvent({
       ...extractRequestInfo(c),
       event: SecurityEvent.ADMIN_LOGOUT,

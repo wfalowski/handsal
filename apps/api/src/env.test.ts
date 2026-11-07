@@ -65,7 +65,7 @@ describe("productionEnvSchema", () => {
       PORT: 3000,
       LOG_LEVEL: "info",
       ENABLE_ADMIN_PANEL: "true",
-      RATE_LIMIT_TOKEN_IP_MAX: 6000,
+      RATE_LIMIT_TOKEN_IP_MAX: 600,
       RATE_LIMIT_TOKEN_CLIENT_MAX: 600,
       TOKEN_EVENTS_RETENTION_DAYS: 30,
     });

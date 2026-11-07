@@ -26,6 +26,7 @@ import {
 } from "../../test/factories.js";
 import { jsonRequest, loginAs } from "../../test/helpers.js";
 import { decryptPrivateKey } from "../../utils/crypto.js";
+import { setOutboundLookupForTests } from "../../utils/outbound-url.js";
 import { memberRoutes } from "./members.js";
 import { tenantRoutes } from "./tenants.js";
 
@@ -175,6 +176,8 @@ describe("approval webhook", () => {
     expect((await jsonRequest(apiKeyApp, "PATCH", path, body, auth)).status).toBe(200);
     const prevNodeEnv = env.NODE_ENV;
     env.NODE_ENV = "production";
+    // hooks.example.com does not resolve; production now checks DNS before saving.
+    setOutboundLookupForTests(async () => [{ address: "192.0.2.1", family: 4 }]);
     try {
       const res = await jsonRequest(apiKeyApp, "PATCH", path, body, auth);
       expect(res.status).toBe(400);
@@ -183,6 +186,7 @@ describe("approval webhook", () => {
       expect(ok.status).toBe(200);
     } finally {
       env.NODE_ENV = prevNodeEnv;
+      setOutboundLookupForTests(null);
     }
   });
 });

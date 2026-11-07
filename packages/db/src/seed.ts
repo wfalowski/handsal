@@ -1,5 +1,7 @@
 import "dotenv/config";
 import crypto from "node:crypto";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import argon2 from "argon2";
 import { and, eq } from "drizzle-orm";
 import { db, pool } from "./client.js";
@@ -39,9 +41,30 @@ function randomString(alphabet: string, length: number): string {
 
 const hash = (plain: string) => argon2.hash(plain, { type: argon2.argon2id });
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+/** True only for a URL whose host is localhost, 127.0.0.1, or ::1 (brackets optional). */
+export function seedDatabaseHostAllowed(databaseUrl: string | undefined): boolean {
+  if (!databaseUrl) return false;
+  try {
+    let hostname = new URL(databaseUrl).hostname.toLowerCase();
+    if (hostname.startsWith("[") && hostname.endsWith("]")) hostname = hostname.slice(1, -1);
+    return LOOPBACK_HOSTS.has(hostname);
+  } catch {
+    return false;
+  }
+}
+
 async function seed() {
   if (process.env.NODE_ENV === "production") {
     console.error("Seed script must not be run in production");
+    process.exit(1);
+  }
+
+  if (!seedDatabaseHostAllowed(process.env.DATABASE_URL)) {
+    console.error(
+      "Seed script must not be run unless DATABASE_URL uses a loopback host (localhost, 127.0.0.1, or ::1)",
+    );
     process.exit(1);
   }
 
@@ -143,7 +166,20 @@ async function seed() {
   console.log("Seeding complete.");
 }
 
-seed().catch((err) => {
-  console.error("Seed failed:", err);
-  process.exit(1);
-});
+// Direct `tsx src/seed.ts` only. Importing the helper from tests must not insert rows.
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectRun()) {
+  seed().catch((err) => {
+    console.error("Seed failed:", err);
+    process.exit(1);
+  });
+}

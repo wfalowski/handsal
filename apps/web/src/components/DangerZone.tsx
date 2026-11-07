@@ -39,7 +39,7 @@ export function DangerZone({ tenantId, slug, paused }: Props) {
     <div className="flex flex-col px-5">
       <Row
         title="Revoke all active tokens"
-        help="Every service will need to request a new token on its next call."
+        help="Stops these tokens at introspection. Servers that verify the signature locally keep them until they expire."
       >
         <Button variant="secondary" size="sm" onClick={() => setDialog("revoke")}>
           Revoke all
@@ -50,7 +50,7 @@ export function DangerZone({ tenantId, slug, paused }: Props) {
         help={
           paused
             ? "Accept token requests again."
-            : "Reject all token requests until resumed. Configuration is kept."
+            : "Rejects new token requests. Tokens already issued still verify locally until they expire."
         }
       >
         {paused ? (
@@ -99,7 +99,8 @@ export function DangerZone({ tenantId, slug, paused }: Props) {
           })
         }
       >
-        Every token issued so far stops being valid. Services must request new tokens.
+        Introspection will treat these tokens as inactive. A server that only checks the signature
+        still accepts them until they expire.
       </ConfirmDialog>
 
       <ConfirmDialog

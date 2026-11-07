@@ -34,7 +34,7 @@ Token endpoint errors (HTTP status, `error`, cause):
 | 429 | `too_many_requests` | Agent hourly token budget exhausted (`tokenBudgetPerHour`): `Retry-After` in seconds until the oldest counted token leaves the one-hour window; no `X-RateLimit-*` headers |
 | 500 | `server_error` | Unexpected error |
 
-Rate limits (per minute, per IP and per `client_id`): token 6000 / 600, introspect 1200 / 600, revoke 200 / 100; configurable (see README).
+Rate limits (per minute, per IP and per `client_id`): token 600 / 600, introspect 1200 / 600, revoke 200 / 100; configurable (see README).
 
 ### Human approval grant
 

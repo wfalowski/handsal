@@ -22,6 +22,7 @@ import {
   createTenant as createTenantRow,
   truncateAll,
 } from "../test/factories.js";
+import { setOutboundLookupForTests } from "../utils/outbound-url.js";
 import {
   createTenant,
   deleteTenant,
@@ -175,8 +176,15 @@ describe("deleteTenant", () => {
     const idp = { issuer: "https://i.example.com", audience: "a" };
     const prev = env.NODE_ENV;
     env.NODE_ENV = "production";
+    // Public answers only. Literal internal hosts are rejected before this runs.
+    setOutboundLookupForTests(async (host) =>
+      host === "169.254.169.254.nip.io"
+        ? [{ address: "169.254.169.254", family: 4 }]
+        : [{ address: "192.0.2.1", family: 4 }],
+    );
     onTestFinished(() => {
       env.NODE_ENV = prev;
+      setOutboundLookupForTests(null);
     });
     expect(
       (await updateTenant(t.id, { approvalWebhookUrl: "https://hooks.example.com/x" }))
@@ -188,6 +196,7 @@ describe("deleteTenant", () => {
       { externalIdp: { ...idp, jwksUri: "https://[::ffff:192.168.1.1]/jwks" } },
       { externalIdp: { ...idp, jwksUri: "https://169.254.169.254/latest" } },
       { externalIdp: { ...idp, jwksUri: "https://metadata.google.internal/" } },
+      { externalIdp: { ...idp, jwksUri: "https://169.254.169.254.nip.io/latest" } },
       { approvalWebhookUrl: "http://localhost:8080/hook" },
       { approvalWebhookUrl: "https://printer.local/hook" },
       { approvalWebhookUrl: "https://[fd12::1]/hook" },

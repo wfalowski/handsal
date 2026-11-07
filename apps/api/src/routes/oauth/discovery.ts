@@ -1,6 +1,4 @@
-import { db, scopes } from "@handsal/db";
 import { GRANT_TYPES } from "@handsal/shared";
-import { eq } from "drizzle-orm";
 import { type Context, Hono } from "hono";
 import type { AppEnv } from "../../app.js";
 import { env } from "../../env.js";
@@ -11,13 +9,9 @@ const AUTH_METHODS = ["client_secret_basic", "client_secret_post", "private_key_
 export function createDiscoveryRoutes() {
   const routes = new Hono<AppEnv>();
 
-  const handler = async (c: Context<AppEnv>) => {
+  const handler = (c: Context<AppEnv>) => {
     const tenant = c.var.tenant;
     const issuer = `${env.PUBLIC_URL}/t/${tenant.slug}`;
-    const rows = await db
-      .selectDistinct({ name: scopes.name })
-      .from(scopes)
-      .where(eq(scopes.tenantId, tenant.id));
     c.header("Cache-Control", "public, max-age=300");
     return c.json({
       issuer,
@@ -33,7 +27,6 @@ export function createDiscoveryRoutes() {
       token_endpoint_auth_methods_supported: AUTH_METHODS,
       introspection_endpoint_auth_methods_supported: AUTH_METHODS,
       revocation_endpoint_auth_methods_supported: AUTH_METHODS,
-      scopes_supported: rows.map((r) => r.name).sort(),
       response_types_supported: [],
       id_token_signing_alg_values_supported: ["ES256"],
       token_endpoint_auth_signing_alg_values_supported: ["ES256"],

@@ -13,15 +13,34 @@ export class ServiceOverloadError extends Error {
 // introspect and revoke request runs a verify (including a dummy verify for
 // unknown/malformed clients, to stay timing-safe), so an unauthenticated flood
 // can saturate CPU and the libuv threadpool. Cap concurrent verifications and
-// shed load beyond the ceiling instead of queueing unbounded work.
+// shed load beyond the ceiling instead of queueing unbounded work. A lane (the
+// caller's source IP) is also capped at one in flight, so one source cannot
+// hold every global slot and starve other tenants.
 const MAX_INFLIGHT_HASH_OPS = 10;
+const MAX_INFLIGHT_PER_LANE = 1;
 let inflightHashOps = 0;
+const inflightByLane = new Map<string, number>();
 
-export async function hashSecret(secret: string): Promise<string> {
-  if (inflightHashOps >= MAX_INFLIGHT_HASH_OPS) {
+/** Reserve a global slot, and a lane slot when `lane` is set. Throws before either increments. */
+function acquireHashSlot(lane?: string): void {
+  const laneInflight = lane === undefined ? 0 : (inflightByLane.get(lane) ?? 0);
+  if (inflightHashOps >= MAX_INFLIGHT_HASH_OPS || laneInflight >= MAX_INFLIGHT_PER_LANE) {
     throw new ServiceOverloadError();
   }
   inflightHashOps++;
+  if (lane !== undefined) inflightByLane.set(lane, laneInflight + 1);
+}
+
+function releaseHashSlot(lane?: string): void {
+  inflightHashOps--;
+  if (lane === undefined) return;
+  const next = (inflightByLane.get(lane) ?? 0) - 1;
+  if (next <= 0) inflightByLane.delete(lane);
+  else inflightByLane.set(lane, next);
+}
+
+export async function hashSecret(secret: string, lane?: string): Promise<string> {
+  acquireHashSlot(lane);
   try {
     return await argon2.hash(secret, {
       type: argon2.argon2id,
@@ -30,22 +49,19 @@ export async function hashSecret(secret: string): Promise<string> {
       parallelism: 4,
     });
   } finally {
-    inflightHashOps--;
+    releaseHashSlot(lane);
   }
 }
 
-export async function verifySecret(secret: string, hash: string): Promise<boolean> {
-  if (inflightHashOps >= MAX_INFLIGHT_HASH_OPS) {
-    throw new ServiceOverloadError();
-  }
-  inflightHashOps++;
+export async function verifySecret(secret: string, hash: string, lane?: string): Promise<boolean> {
+  acquireHashSlot(lane);
   try {
     return await argon2.verify(hash, secret);
   } catch {
     // A malformed hash or mismatch — not an overload; treat as auth failure.
     return false;
   } finally {
-    inflightHashOps--;
+    releaseHashSlot(lane);
   }
 }
 

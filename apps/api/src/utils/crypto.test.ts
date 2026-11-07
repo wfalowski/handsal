@@ -37,6 +37,31 @@ describe("hashSecret / verifySecret", () => {
       expect((r as PromiseRejectedResult).reason).toBeInstanceOf(ServiceOverloadError);
     }
   });
+
+  it("sheds a second concurrent verify in the same lane", async () => {
+    const results = await Promise.allSettled([
+      verifySecret("pw", "not-a-valid-hash", "same-lane"),
+      verifySecret("pw", "not-a-valid-hash", "same-lane"),
+    ]);
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(ServiceOverloadError);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    expect(fulfilled).toHaveLength(1);
+    expect((fulfilled[0] as PromiseFulfilledResult<boolean>).value).toBe(false);
+  });
+
+  it("lets concurrent verifies in different lanes both settle", async () => {
+    const results = await Promise.allSettled([
+      verifySecret("pw", "not-a-valid-hash", "lane-a"),
+      verifySecret("pw", "not-a-valid-hash", "lane-b"),
+    ]);
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+    expect(results.map((r) => (r as PromiseFulfilledResult<boolean>).value)).toEqual([
+      false,
+      false,
+    ]);
+  });
 });
 
 describe("generateClientId / generateClientSecret", () => {

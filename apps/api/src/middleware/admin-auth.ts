@@ -33,6 +33,8 @@ interface SessionPayload {
   sub: string;
   iat: number;
   exp: number;
+  /** `admin_users.session_version` at issue time. Missing on cookies from before revocation existed. */
+  sv: number;
 }
 
 const hmac = (key: Buffer, data: string) =>
@@ -45,15 +47,24 @@ function safeEqual(a: string, b: string): boolean {
   return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
 }
 
-/** `base64url(payload).base64url(hmac)`; `nowMs` is injectable for tests. */
-export function createSessionToken(adminUserId: string, nowMs = Date.now()): string {
+/** `base64url(payload).base64url(hmac)`; `nowMs` and `sessionVersion` are injectable for tests. */
+export function createSessionToken(
+  adminUserId: string,
+  nowMs = Date.now(),
+  sessionVersion = 0,
+): string {
   const iat = Math.floor(nowMs / 1000);
-  const payload: SessionPayload = { sub: adminUserId, iat, exp: iat + SESSION_TTL_SECONDS };
+  const payload: SessionPayload = {
+    sub: adminUserId,
+    iat,
+    exp: iat + SESSION_TTL_SECONDS,
+    sv: sessionVersion,
+  };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${encoded}.${hmac(SESSION_KEY, encoded)}`;
 }
 
-/** Returns the payload when the signature is valid and not expired, else null. */
+/** Returns the payload when the signature is valid, `sv` is a number, and not expired, else null. */
 export function verifySessionToken(token: string, nowMs = Date.now()): SessionPayload | null {
   const [encoded, signature, ...rest] = token.split(".");
   if (!encoded || !signature || rest.length > 0) return null;
@@ -63,6 +74,8 @@ export function verifySessionToken(token: string, nowMs = Date.now()): SessionPa
       Buffer.from(encoded, "base64url").toString("utf8"),
     ) as SessionPayload;
     if (typeof payload.sub !== "string" || typeof payload.exp !== "number") return null;
+    // Cookies issued before session_version existed have no `sv` and must not keep working.
+    if (typeof payload.sv !== "number") return null;
     return nowMs / 1000 < payload.exp ? payload : null;
   } catch {
     return null;
@@ -132,6 +145,7 @@ export function createAdminAuth({
     if (!session) throw authFailure(c, "invalid_session_cookie");
     const user = await getAdminUser(session.sub);
     if (!user?.isActive) throw authFailure(c, "inactive_or_deleted_user");
+    if (user.sessionVersion !== session.sv) throw authFailure(c, "session_revoked");
 
     c.set("actor", {
       kind: "user",

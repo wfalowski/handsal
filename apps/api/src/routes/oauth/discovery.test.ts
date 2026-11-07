@@ -37,7 +37,6 @@ describe("discovery", () => {
       token_endpoint_auth_methods_supported: AUTH,
       introspection_endpoint_auth_methods_supported: AUTH,
       revocation_endpoint_auth_methods_supported: AUTH,
-      scopes_supported: [],
       response_types_supported: [],
       id_token_signing_alg_values_supported: ["ES256"],
       token_endpoint_auth_signing_alg_values_supported: ["ES256"],
@@ -58,14 +57,12 @@ describe("discovery", () => {
     expect(a).toEqual(b);
   });
 
-  it("lists scopes sorted and deduplicated across resources", async () => {
+  it("does not publish scope names", async () => {
     const t = await createTenant();
     await createResourceWithScopes(t.id, "https://a.io/x", ["b:read", "a:read"]);
     await createResourceWithScopes(t.id, "https://b.io/y", ["b:read", "c:read"]);
-    const other = await createTenant();
-    await createResourceWithScopes(other.id, "https://c.io/z", ["zzz"]);
     const body = await (await get(t.slug)).json();
-    expect(body.scopes_supported).toEqual(["a:read", "b:read", "c:read"]);
+    expect(body).not.toHaveProperty("scopes_supported");
   });
 
   it("serves a paused tenant", async () => {

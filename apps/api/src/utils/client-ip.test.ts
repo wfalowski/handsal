@@ -60,4 +60,31 @@ describe("getClientIp", () => {
     });
     expect(getClientIp(ctx({}))).toBe("unknown");
   });
+
+  it("ignores XFF when the peer is a public address", () => {
+    mockGetConnInfo.mockReturnValue({ remote: { address: "203.0.113.5" } });
+    expect(getClientIp(ctx({ "x-forwarded-for": "9.9.9.9" }))).toBe("203.0.113.5");
+  });
+
+  it("ignores x-real-ip when the peer is a public address and XFF is absent", () => {
+    mockGetConnInfo.mockReturnValue({ remote: { address: "203.0.113.5" } });
+    expect(getClientIp(ctx({ "x-real-ip": "8.8.8.8" }))).toBe("203.0.113.5");
+  });
+
+  it("trusts XFF when the peer is an IPv4-mapped private address", () => {
+    mockGetConnInfo.mockReturnValue({ remote: { address: "::ffff:10.0.0.5" } });
+    expect(getClientIp(ctx({ "x-forwarded-for": "1.2.3.4" }))).toBe("1.2.3.4");
+  });
+
+  it("returns 'unknown' when the peer cannot be determined, even if XFF is set", () => {
+    mockGetConnInfo.mockImplementation(() => {
+      throw new Error("no conn info");
+    });
+    expect(getClientIp(ctx({ "x-forwarded-for": "1.2.3.4" }))).toBe("unknown");
+  });
+
+  it("returns 'unknown' when the socket has no address, even if XFF is set", () => {
+    mockGetConnInfo.mockReturnValue({ remote: {} });
+    expect(getClientIp(ctx({ "x-forwarded-for": "1.2.3.4" }))).toBe("unknown");
+  });
 });

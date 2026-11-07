@@ -83,6 +83,7 @@ describe("session cycle", () => {
     const tenant = await createTenant({ name: "Acme" });
     await addMember(tenant.id, user.id, "admin");
     const { cookie, csrf } = await loginAs(app, user.email, password);
+    const other = await loginAs(app, user.email, password);
 
     const me = await jsonRequest(app, "GET", "/api/auth/me", undefined, { cookie });
     expect(me.status).toBe(200);
@@ -99,12 +100,38 @@ describe("session cycle", () => {
       ],
       csrfToken: csrf,
     });
+    expect(
+      (await jsonRequest(app, "GET", "/api/auth/me", undefined, { cookie: other.cookie })).status,
+    ).toBe(200);
 
     const out = await jsonRequest(app, "POST", "/api/auth/logout", undefined, { cookie });
     expect(out.status).toBe(204);
     const cleared = out.headers.get("set-cookie") ?? "";
     expect(cleared).toMatch(/^handsal_session=;/);
     expect(cleared).toContain("Max-Age=0");
+
+    const reused = await jsonRequest(app, "GET", "/api/auth/me", undefined, { cookie });
+    expect(reused.status).toBe(401);
+    expect(
+      (await jsonRequest(app, "GET", "/api/auth/me", undefined, { cookie: other.cookie })).status,
+    ).toBe(401);
+
+    const fresh = await loginAs(app, user.email, password);
+    const meAgain = await jsonRequest(app, "GET", "/api/auth/me", undefined, {
+      cookie: fresh.cookie,
+    });
+    expect(meAgain.status).toBe(200);
+    expect(await meAgain.json()).toMatchObject({ user: { id: user.id } });
+    expect((await jsonRequest(app, "GET", "/api/auth/me", undefined, { cookie })).status).toBe(401);
+
+    // An already-stale cookie must not bump session_version again and kill the fresh login.
+    const staleLogout = await jsonRequest(app, "POST", "/api/auth/logout", undefined, { cookie });
+    expect(staleLogout.status).toBe(204);
+    expect(
+      (await jsonRequest(app, "GET", "/api/auth/me", undefined, { cookie: fresh.cookie })).status,
+    ).toBe(200);
+    const [row] = await db.select().from(adminUsers).where(eq(adminUsers.id, user.id));
+    expect(row.sessionVersion).toBe(1);
   });
 
   it("super-admin /me lists every tenant as owner", async () => {

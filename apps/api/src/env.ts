@@ -41,10 +41,12 @@ export const envSchema = z.object({
   // when TRUST_PROXY=true). Default 1 = a single reverse proxy.
   TRUST_PROXY_HOP_COUNT: z.coerce.number().int().min(1).default(1),
   ENABLE_ADMIN_PANEL: z.enum(["true", "false"]).default("true"),
-  // Token endpoint rate limits. Many services often share one egress IP, and
-  // workers often share one client_id, so the defaults are generous but finite
-  // (unauthenticated Argon2 hammering from one IP stays bounded).
-  RATE_LIMIT_TOKEN_IP_MAX: z.coerce.number().int().positive().default(6000),
+  // Token endpoint rate limits. One shared egress IP is still allowed hundreds
+  // of token requests per minute, but it must not be able to schedule more
+  // Argon2 than the process can finish; the per-source lane cap is the
+  // cross-tenant protection. Workers often share one client_id, so that
+  // default stays generous but finite.
+  RATE_LIMIT_TOKEN_IP_MAX: z.coerce.number().int().positive().default(600),
   RATE_LIMIT_TOKEN_CLIENT_MAX: z.coerce.number().int().positive().default(600),
   RATE_LIMIT_INTROSPECT_IP_MAX: z.coerce.number().int().positive().default(1200),
   RATE_LIMIT_INTROSPECT_CLIENT_MAX: z.coerce.number().int().positive().default(600),

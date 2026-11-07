@@ -1,7 +1,11 @@
-import { pool, runMigrations } from "@handsal/db";
+import crypto from "node:crypto";
+import { adminUsers, db, pool, runMigrations } from "@handsal/db";
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { env } from "../env.js";
 import { createAdminUser, truncateAll } from "../test/factories.js";
+import { deriveKey } from "../utils/crypto.js";
 import {
   type AdminEnv,
   createAdminAuth,
@@ -36,13 +40,22 @@ afterAll(async () => {
   await pool.end();
 });
 
+/** Sign a payload with the session key, so tests can forge a pre-`sv` cookie the HMAC would accept. */
+function signSessionPayload(payload: Record<string, unknown>): string {
+  const key = deriveKey(env.KEY_ENCRYPTION_SECRET, "admin-session");
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = crypto.createHmac("sha256", key).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
 describe("session token", () => {
   it("round-trips and expires after 12 h", () => {
     const now = Date.now();
     const token = createSessionToken("user-1", now);
-    expect(verifySessionToken(token, now)?.sub).toBe("user-1");
+    expect(verifySessionToken(token, now)).toMatchObject({ sub: "user-1", sv: 0 });
     expect(verifySessionToken(token, now + (SESSION_TTL_SECONDS - 1) * 1000)).not.toBeNull();
     expect(verifySessionToken(token, now + (SESSION_TTL_SECONDS + 1) * 1000)).toBeNull();
+    expect(verifySessionToken(createSessionToken("user-1", now, 3), now)?.sv).toBe(3);
   });
 
   it("rejects garbage and unsigned tokens", () => {
@@ -52,6 +65,13 @@ describe("session token", () => {
       "base64url",
     );
     expect(verifySessionToken(`${payload}.`)).toBeNull();
+  });
+
+  it("rejects a signed token with no sv", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const base = { sub: "user-1", iat: now, exp: now + 60 };
+    expect(verifySessionToken(signSessionPayload({ ...base, sv: 0 }))?.sv).toBe(0);
+    expect(verifySessionToken(signSessionPayload(base))).toBeNull();
   });
 });
 
@@ -63,6 +83,20 @@ describe("adminAuth", () => {
       headers: { cookie: `${SESSION_COOKIE}=${token}` },
     });
     expect(res.status).toBe(401);
+  });
+
+  it("rejects a cookie whose session version does not match the user", async () => {
+    const { user } = await createAdminUser();
+    await db.update(adminUsers).set({ sessionVersion: 1 }).where(eq(adminUsers.id, user.id));
+    const token = createSessionToken(user.id, Date.now(), 0);
+    const res = await probeApp().request("/x", {
+      headers: { cookie: `${SESSION_COOKIE}=${token}` },
+    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({
+      error: "unauthenticated",
+      error_description: "Authentication required",
+    });
   });
 
   it("accepts a valid session cookie as a user actor", async () => {
