@@ -14,7 +14,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 // No socket in app.request. Throw unless a test installs a trusted peer, so
 // forwarding headers stay ignored the way they are for a direct caller.
 const { mockGetConnInfo } = vi.hoisted(() => ({
-  mockGetConnInfo: vi.fn(() => {
+  mockGetConnInfo: vi.fn((): { remote: { address: string } } => {
     throw new Error("no conninfo");
   }),
 }));
