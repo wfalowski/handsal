@@ -1,8 +1,10 @@
 {
   "name": "handsal",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
-    "dev": "turbo dev",
+    "dev": "turbo dev --filter=@handsal/api --filter=@handsal/web",
+    "site": "pnpm --filter @handsal/site dev",
     "build": "turbo build",
     "lint": "biome lint .",
     "lint:fix": "biome lint --fix .",

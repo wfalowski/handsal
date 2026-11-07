@@ -18,11 +18,9 @@ import {
 } from "./admin-auth.js";
 import { errorHandler } from "./error-handler.js";
 
-const API_KEY = "k".repeat(40);
-
-function probeApp(apiKey?: string) {
+function probeApp() {
   const app = new Hono<AdminEnv>();
-  app.use("*", createAdminAuth({ apiKey }), csrfProtection);
+  app.use("*", createAdminAuth(), csrfProtection);
   app.all("/x", (c) => c.json(c.var.actor));
   app.onError(errorHandler);
   return app;
@@ -115,27 +113,9 @@ describe("adminAuth", () => {
     });
   });
 
-  it("API key passes as super-admin and skips CSRF", async () => {
-    const res = await probeApp(API_KEY).request("/x", {
-      method: "POST",
-      headers: { authorization: `Bearer ${API_KEY}` },
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ kind: "api-key", isSuperAdmin: true });
-  });
-
-  it("wrong API key → 401", async () => {
-    for (const key of ["k".repeat(39), "x".repeat(40), ""]) {
-      const res = await probeApp(API_KEY).request("/x", {
-        headers: { authorization: `Bearer ${key}` },
-      });
-      expect(res.status).toBe(401);
-    }
-  });
-
-  it("bearer path is disabled when no API key is configured", async () => {
-    const res = await probeApp(undefined).request("/x", {
-      headers: { authorization: `Bearer ${API_KEY}` },
+  it("a bearer token is not a management credential", async () => {
+    const res = await probeApp().request("/x", {
+      headers: { authorization: `Bearer ${"k".repeat(48)}` },
     });
     expect(res.status).toBe(401);
     expect((await res.json()).error).toBe("unauthenticated");

@@ -40,7 +40,7 @@ export const approvalRequests = pgTable(
     justification: text("justification"),
     status: approvalStatus("status").notNull().default("pending"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    // The human who decided; null for expiry and ADMIN_API_KEY actors.
+    // The human who decided; null for expiry and for decisions stored before a user id was required.
     decidedBy: uuid("decided_by").references(() => adminUsers.id, { onDelete: "set null" }),
     // The auto-approve rule that decided; null for human decisions and expiry.
     decidedByRuleId: uuid("decided_by_rule_id").references(() => approvalRules.id, {

@@ -4,7 +4,7 @@
 # Put a TLS-terminating reverse proxy in front of :3000 and set TRUST_PROXY=true.
 services:
   handsal:
-    image: ghcr.io/OWNER/handsal:latest   # or: build: .
+    image: ghcr.io/wfalowski/handsal:latest   # or: build: .
     restart: unless-stopped
     env_file: .env
     environment:

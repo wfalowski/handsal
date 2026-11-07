@@ -11,8 +11,8 @@ import { signingKeyRoutes } from "./signing-keys.js";
 import { tenantRoutes } from "./tenants.js";
 import { tokenEventRoutes } from "./token-events.js";
 
-// Mounted at /api. Everything except login/logout requires an actor (session or API key)
-// and, for session actors, X-CSRF-Token on mutating methods.
+// Mounted at /api. Everything except login/logout requires a session cookie
+// and X-CSRF-Token on mutating methods.
 export const managementRoutes = new Hono<AdminEnv>();
 
 managementRoutes.use(

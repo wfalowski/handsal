@@ -34,14 +34,12 @@ Generate every secret per environment; never reuse the values from `.env.example
 ```bash
 openssl rand -hex 32   # KEY_ENCRYPTION_SECRET (exactly 64 hex chars)
 openssl rand -hex 32   # POSTGRES_PASSWORD
-openssl rand -hex 32   # ADMIN_API_KEY (optional, 64 chars; production needs at least 48)
 ```
 
 In production the process refuses to start when `KEY_ENCRYPTION_SECRET` is the `.env.example` placeholder or a repeated pattern, when `PUBLIC_URL` is not `https://`, when `CORS_ORIGINS` contains `localhost`, or when `BOOTSTRAP_ADMIN_PASSWORD` is `change-me`. `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` (min 12 chars) only take effect when the `admin_users` table is empty; changing them later does nothing. Remove them from `.env` after the first start if you prefer.
 
 ### Rotating secrets
 
-- `ADMIN_API_KEY`: change it and restart. Nothing else depends on it.
 - Client secrets: rotate per application in the UI or with `POST .../rotate-secret`; the old secret keeps working for `graceSeconds` (default 24 h).
 - `KEY_ENCRYPTION_SECRET`: it encrypts the signing private keys and derives the admin session and CSRF keys. Changing it signs every admin user out and makes all stored signing keys undecryptable, so token issuance fails (HTTP 500) until the keys are replaced. There is no re-encryption tool. Procedure:
   1. Take a database backup (see below) and stop the `handsal` container.
@@ -72,7 +70,7 @@ location / {
 }
 ```
 
-Set `TRUST_PROXY=true` and `TRUST_PROXY_HOP_COUNT` to the number of proxies in front of Handsal (1 for a single proxy, 2 for a CDN plus a proxy). The client IP is the entry that many positions from the right of `X-Forwarded-For`; entries further left are client-controlled and ignored. Without `TRUST_PROXY=true`, all requests share the proxy's address: per-IP rate limits collapse into one bucket and token events and security logs record the proxy IP. A startup warning reminds you in production. A request body above 16 KiB on `/t/*` is rejected with 413.
+Set `TRUST_PROXY=true` and `TRUST_PROXY_HOP_COUNT` to the number of proxies in front of Handsal (1 for a single proxy, 2 for a CDN plus a proxy). Forwarding headers are read only when that flag is set and the immediate TCP peer is loopback (`127/8`, `::1`), RFC 1918, link-local (`169.254/16`, `fe80::/10`), CGNAT (`100.64/10`) or IPv6 unique-local (`fc00::/7`). A public peer is used as-is, so a caller on the internet cannot supply `X-Forwarded-For`. The client IP is the entry that many positions from the right of `X-Forwarded-For`; entries further left are client-controlled and ignored. If those headers are absent, Handsal uses the peer address. Without `TRUST_PROXY=true`, all requests share the proxy's address: per-IP rate limits collapse into one bucket and token events and security logs record the proxy IP. A startup warning reminds you in production. A request body above 16 KiB on `/t/*` is rejected with 413.
 
 ### Reverse proxies and agent CIDR rules
 
@@ -80,7 +78,7 @@ An `agent` application's `allowedCidrs` are checked against the same client IP a
 
 - Behind a proxy, set `TRUST_PROXY=true` and the exact `TRUST_PROXY_HOP_COUNT`. With `TRUST_PROXY=false` Handsal sees the proxy's address, so a CIDR list either denies every agent or, if it contains the proxy's range, admits anyone who can reach the proxy.
 - A hop count that is too small selects an address added by a proxy, not the client; one that is too large selects an entry the client wrote itself and can therefore spoof to satisfy the list. Count only proxies you operate.
-- Make the proxy overwrite or append `X-Forwarded-For` (never pass a client-supplied value through unchanged), and do not expose port 3000 directly: with `TRUST_PROXY=true` a direct caller can send any `X-Forwarded-For` or `X-Real-IP`.
+- Make the proxy overwrite or append `X-Forwarded-For` (never pass a client-supplied value through unchanged). Do not publish port 3000 on a public address. Headers from a public peer are ignored, but any host that can connect from a private or loopback address (another container, the host, the LAN) can still set them.
 
 Denied requests are logged as token events with reason `cidr_denied` and the IP that was evaluated; check it after the first deployment. Treat CIDRs as one layer next to `private_key_jwt`, not as the only control.
 
@@ -154,7 +152,7 @@ Revoking a token (`/oauth/revoke`), "revoke all" (application or tenant), disabl
 
 ## Outbound URLs
 
-`approvalWebhookUrl` and `externalIdp.jwksUri` are tenant settings the server fetches or posts to. In production they must be `https`, and literal loopback, link-local, RFC 1918 and unique-local addresses, `localhost`, `*.localhost`, `*.internal` and `*.local` are rejected with `400 validation_error`; outside production `http` and these addresses are allowed for local development. The guard checks the URL, not the resolved address, so DNS rebinding is not covered: restrict egress at the network level if tenant admins are not trusted. JWKS fetches do not follow redirects and the JWKS cache holds at most 100 entries.
+`approvalWebhookUrl` and `externalIdp.jwksUri` are tenant settings the server fetches or posts to. In production they must be `https`. Literal loopback, link-local (`169.254/16`), RFC 1918, CGNAT (`100.64/10`), `0/8`, and IPv6 loopback, link-local and unique-local addresses are rejected, as are `localhost`, `*.localhost`, `*.internal` and `*.local` (`400 validation_error`). A hostname is resolved and refused when any answer is internal. A name that cannot be resolved is `400` with "could not be resolved". The connection uses only the address resolved before the request, so a later DNS answer cannot retarget it, and redirects are not followed. Outside production, `http` and these addresses are allowed and names are not resolved, so a local webhook still works. The JWKS cache holds at most 100 entries.
 
 ## Observability
 
@@ -164,3 +162,32 @@ Revoking a token (`/oauth/revoke`), "revoke all" (application or tenant), disabl
 - Background jobs (key rotation and retirement hourly, revoked-token purge hourly, token-log retention daily, approval expiry and retention hourly) run in-process and log failures as `Job failed`.
 - Resolved approvals are deleted after 30 days by the hourly `approval-retention` job (1000 rows per run); expired pending approvals are marked by `approval-expiry`.
 - Shutdown on `SIGTERM` is graceful (10 s limit).
+
+## Landing
+
+The marketing page lives in `apps/site` (Astro, static HTML). It is not part of the Docker image and is not served by the API. `pnpm dev` still starts only the API and the admin UI. `pnpm site` serves the page at `http://localhost:4321`. The same site serves `/docs` and `/pl/docs` from `docs/overview.md`, `docs/sdk.md`, and the Polish copies beside them. `@handsal/sdk` is not part of the image either.
+
+`pnpm build` and `pnpm typecheck` include it. The built files are `apps/site/dist`.
+
+Two optional build-time variables, both public:
+
+| Variable | Effect |
+|---|---|
+| `SITE_GITHUB_URL` | Repository linked as Source and GitHub. Defaults to `https://github.com/wfalowski/handsal`. No trailing-slash requirement. |
+| `SITE_URL` | Canonical URL of the page, for example `https://handsal.dev`. |
+
+The GitHub Actions workflow `.github/workflows/pages.yml` publishes `apps/site/dist` to Cloudflare Pages on a push to `main` (and when run by hand). It sets `SITE_GITHUB_URL` from `github.repository`. It deploys only when the repository variable `CLOUDFLARE_ACCOUNT_ID` is set, so a fresh clone does not fail the workflow.
+
+Before the first deploy, create the Pages project once (production branch `main`):
+
+```bash
+npx wrangler pages project create handsal --production-branch main
+```
+
+Then in the GitHub repository:
+
+- Variable `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account id. This is what turns deploys on.
+- Secret `CLOUDFLARE_API_TOKEN` — a token with the Cloudflare Pages edit permission.
+- Variable `SITE_URL` — optional canonical origin.
+
+The project name in the workflow is `handsal`. Pull requests from the same repository deploy a preview; the production branch is `main`. Fork pull requests are not deployed. The page sends a strict content security policy (`script-src 'none'`) from `apps/site/public/_headers`.

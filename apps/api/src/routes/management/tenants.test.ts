@@ -10,12 +10,9 @@ import {
 } from "@handsal/db";
 import type { TenantRole } from "@handsal/shared";
 import { count, eq } from "drizzle-orm";
-import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { app } from "../../app.js";
 import { env } from "../../env.js";
-import { type AdminEnv, createAdminAuth, csrfProtection } from "../../middleware/admin-auth.js";
-import { errorHandler } from "../../middleware/error-handler.js";
 import {
   addMember,
   createAdminUser,
@@ -27,8 +24,6 @@ import {
 import { jsonRequest, loginAs } from "../../test/helpers.js";
 import { decryptPrivateKey } from "../../utils/crypto.js";
 import { setOutboundLookupForTests } from "../../utils/outbound-url.js";
-import { memberRoutes } from "./members.js";
-import { tenantRoutes } from "./tenants.js";
 
 beforeAll(async () => {
   await runMigrations();
@@ -52,13 +47,6 @@ async function sessionFor(opts: { tenantId?: string; role?: TenantRole; superAdm
 
 const call = (s: Session, method: string, path: string, body?: unknown) =>
   jsonRequest(app, method, path, body, { cookie: s.cookie, "x-csrf-token": s.csrf });
-
-const API_KEY = "k".repeat(40);
-const apiKeyApp = new Hono<AdminEnv>();
-apiKeyApp.use("*", createAdminAuth({ apiKey: API_KEY }), csrfProtection);
-apiKeyApp.route("/api/tenants", tenantRoutes);
-apiKeyApp.route("/api/tenants", memberRoutes);
-apiKeyApp.onError(errorHandler);
 
 const countOf = async (
   table: typeof applications | typeof scopes | typeof signingKeys | typeof tenantMembers,
@@ -170,19 +158,19 @@ describe("approval webhook", () => {
 
   it("http webhook url rejected when NODE_ENV=production, allowed otherwise", async () => {
     const t = await createTenant();
+    const s = await sessionFor({ tenantId: t.id, role: "admin" });
     const path = `/api/tenants/${t.id}`;
-    const auth = { authorization: `Bearer ${API_KEY}` };
     const body = { approvalWebhookUrl: "http://hooks.example.com/handsal" };
-    expect((await jsonRequest(apiKeyApp, "PATCH", path, body, auth)).status).toBe(200);
+    expect((await call(s, "PATCH", path, body)).status).toBe(200);
     const prevNodeEnv = env.NODE_ENV;
     env.NODE_ENV = "production";
     // hooks.example.com does not resolve; production now checks DNS before saving.
     setOutboundLookupForTests(async () => [{ address: "192.0.2.1", family: 4 }]);
     try {
-      const res = await jsonRequest(apiKeyApp, "PATCH", path, body, auth);
+      const res = await call(s, "PATCH", path, body);
       expect(res.status).toBe(400);
       expect((await res.json()).error).toBe("validation_error");
-      const ok = await jsonRequest(apiKeyApp, "PATCH", path, { approvalWebhookUrl: URL_ }, auth);
+      const ok = await call(s, "PATCH", path, { approvalWebhookUrl: URL_ });
       expect(ok.status).toBe(200);
     } finally {
       env.NODE_ENV = prevNodeEnv;
@@ -319,25 +307,6 @@ describe("POST /api/tenants", () => {
     expect(members).toEqual([{ tenantId: tenant.id, adminUserId: s.user.id, role: "owner" }]);
     const keys = await db.select().from(signingKeys).where(eq(signingKeys.tenantId, tenant.id));
     expect(keys.map((k) => k.status)).toEqual(["active"]);
-  });
-
-  it("API key creation yields zero memberships", async () => {
-    const res = await jsonRequest(
-      apiKeyApp,
-      "POST",
-      "/api/tenants",
-      { name: "Acme", slug: "acme" },
-      { authorization: `Bearer ${API_KEY}` },
-    );
-    expect(res.status).toBe(201);
-    const tenant = await res.json();
-    expect(await countOf(tenantMembers, tenant.id)).toBe(0);
-    expect(await countOf(signingKeys, tenant.id)).toBe(1);
-
-    const list = await jsonRequest(apiKeyApp, "GET", "/api/tenants", undefined, {
-      authorization: `Bearer ${API_KEY}`,
-    });
-    expect((await list.json())[0]).toMatchObject({ id: tenant.id, role: "owner" });
   });
 
   it("duplicate slug → 409 slug_exists; invalid body → 400", async () => {

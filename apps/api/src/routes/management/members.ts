@@ -34,22 +34,13 @@ memberRoutes.patch("/:tenantId/members/:adminUserId", requireTenantAccess("owner
   const adminUserId = memberId(c.req.param("adminUserId"));
   const { role } = memberUpdateSchema.parse(await c.req.json().catch(() => ({})));
   const actor = c.var.actor;
-  const member = await updateMemberRole(
-    c.req.param("tenantId"),
-    adminUserId,
-    role,
-    actor.kind === "user" ? actor.userId : undefined,
-  );
+  const member = await updateMemberRole(c.req.param("tenantId"), adminUserId, role, actor.userId);
   return c.json(member);
 });
 
 memberRoutes.delete("/:tenantId/members/:adminUserId", requireTenantAccess("owner"), async (c) => {
   const adminUserId = memberId(c.req.param("adminUserId"));
   const actor = c.var.actor;
-  await removeMember(
-    c.req.param("tenantId"),
-    adminUserId,
-    actor.kind === "user" ? actor.userId : undefined,
-  );
+  await removeMember(c.req.param("tenantId"), adminUserId, actor.userId);
   return c.body(null, 204);
 });

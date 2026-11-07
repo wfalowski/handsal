@@ -35,7 +35,17 @@ import {
 
 const AUD = "https://api.acme.io/payments";
 const ctx = { sourceIp: "203.0.113.7" };
-const apiKey = { kind: "api-key", isSuperAdmin: true } as const;
+
+async function decider() {
+  const { user } = await createAdminUser({ name: "Decider" });
+  return {
+    kind: "user" as const,
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    isSuperAdmin: false,
+  };
+}
 
 /** Agent granted read (auto), write (approval), refund (never). */
 async function setup() {
@@ -230,7 +240,7 @@ describe("redeemApproval", () => {
       status: "pending",
     });
 
-    await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
+    await decideApproval(s.tenant.id, approvalId, "approved", await decider());
     const first = (await redeemApproval(s.tenant, s.app, approvalId, ctx)) as TokenResponse;
     expect(first.expires_in).toBe(300);
     expect(first.scope).toBe("payments:write");
@@ -249,7 +259,7 @@ describe("redeemApproval", () => {
   it("scope demoted to never or ceiling lowered during the window → denied", async () => {
     const s = await setup();
     const { approvalId } = await requestWrite(s);
-    await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
+    await decideApproval(s.tenant.id, approvalId, "approved", await decider());
     await db.update(scopes).set({ agentPolicy: "never" }).where(eq(scopes.id, s.scopes[2].id));
     expect(await reasonOf(redeemApproval(s.tenant, s.app, approvalId, ctx))).toMatchObject({
       code: "invalid_grant",
@@ -258,7 +268,7 @@ describe("redeemApproval", () => {
 
     await db.update(scopes).set({ agentPolicy: "approval" }).where(eq(scopes.id, s.scopes[2].id));
     const next = await requestWrite(s, { taskId: "t-2" });
-    await decideApproval(s.tenant.id, next.approvalId, "approved", apiKey);
+    await decideApproval(s.tenant.id, next.approvalId, "approved", await decider());
     const capped = { ...s.app, maxScopesPerToken: 0 };
     expect(await reasonOf(redeemApproval(s.tenant, capped, next.approvalId, ctx))).toMatchObject({
       code: "invalid_scope",
@@ -269,7 +279,7 @@ describe("redeemApproval", () => {
   it("source outside allowed_cidrs → unauthorized_client, approval not consumed", async () => {
     const s = await setup();
     const { approvalId } = await requestWrite(s);
-    await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
+    await decideApproval(s.tenant.id, approvalId, "approved", await decider());
     const pinned = { ...s.app, allowedCidrs: ["10.0.0.0/8"] };
     expect(await reasonOf(redeemApproval(s.tenant, pinned, approvalId, ctx))).toMatchObject({
       code: "unauthorized_client",
@@ -284,7 +294,7 @@ describe("redeemApproval", () => {
   it("hourly budget spent → 429 budget_exhausted with Retry-After", async () => {
     const s = await setup();
     const { approvalId } = await requestWrite(s);
-    await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
+    await decideApproval(s.tenant.id, approvalId, "approved", await decider());
     const budgeted = { ...s.app, tokenBudgetPerHour: 1 };
     await issueToken(
       s.tenant,
@@ -306,7 +316,7 @@ describe("redeemApproval", () => {
   it("concurrent polls: only one wins", async () => {
     const s = await setup();
     const { approvalId } = await requestWrite(s);
-    await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
+    await decideApproval(s.tenant.id, approvalId, "approved", await decider());
     const results = await Promise.allSettled(
       Array.from({ length: 5 }, () => redeemApproval(s.tenant, s.app, approvalId, ctx)),
     );
@@ -319,7 +329,7 @@ describe("redeemApproval", () => {
   it("grant revoked during the window → invalid_grant", async () => {
     const s = await setup();
     const { approvalId } = await requestWrite(s);
-    await decideApproval(s.tenant.id, approvalId, "approved", apiKey);
+    await decideApproval(s.tenant.id, approvalId, "approved", await decider());
     await db
       .delete(applicationGrants)
       .where(
@@ -351,7 +361,7 @@ describe("redeemApproval", () => {
   it("denied row → access_denied; unknown and foreign ids → invalid_grant", async () => {
     const s = await setup();
     const { approvalId } = await requestWrite(s);
-    await decideApproval(s.tenant.id, approvalId, "denied", apiKey);
+    await decideApproval(s.tenant.id, approvalId, "denied", await decider());
     expect((await reasonOf(redeemApproval(s.tenant, s.app, approvalId, ctx))).code).toBe(
       "access_denied",
     );

@@ -1,0 +1,35 @@
+---
+import Base from "./Base.astro";
+import { localePath, messages, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+  title: string;
+  description: string;
+  path: string;
+}
+
+const { locale, title, description, path } = Astro.props;
+const copy = messages[locale];
+const pages = [
+  { path: "/docs", label: copy.docsOverview },
+  { path: "/docs/sdk", label: copy.docsSdk },
+];
+---
+
+<Base locale={locale} title={`${title} — Handsal`} description={description} path={path}>
+  <main id="content" class="wrap doc">
+    <nav class="doc-nav" aria-label={copy.docs}>
+      {
+        pages.map((page) => (
+          <a href={localePath(locale, page.path)} aria-current={page.path === path ? "page" : undefined}>
+            {page.label}
+          </a>
+        ))
+      }
+    </nav>
+    <article class="prose">
+      <slot />
+    </article>
+  </main>
+</Base>

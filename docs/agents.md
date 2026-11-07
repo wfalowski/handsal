@@ -488,7 +488,7 @@ Documentation follow-ups for `docs/integration.md` and `docs/deployment.md`, ass
 
 ## 9. Risks and unknowns
 
-- **CIDR enforcement is only as strong as `TRUST_PROXY`.** `getClientIp` derives the source IP from forwarded headers when configured. A deployment that proxies without setting `TRUST_PROXY_HOP_COUNT` correctly lets a caller spoof `X-Forwarded-For` and defeat `allowed_cidrs` entirely. This is the largest caveat in 6.2 and belongs in the deployment docs and in the UI helper text, not only in code.
+- **CIDR enforcement is only as strong as `TRUST_PROXY`.** Forwarding headers count only when `TRUST_PROXY=true` and the TCP peer is a trusted proxy address (loopback, private, link-local or CGNAT). A wrong `TRUST_PROXY_HOP_COUNT` still lets a caller spoof `X-Forwarded-For` and defeat `allowed_cidrs`. This is the largest caveat in 6.2 and belongs in the deployment docs and in the UI helper text, not only in code.
 - **Replay protection is per-process.** With more than one replica an assertion can be replayed once per replica inside its 5-minute-or-less lifetime. Acceptable given `Tasks.md` already defers the Redis store, but it must be documented rather than implied.
 - **Budget is advisory under concurrency.** Burst traffic at the boundary can exceed the configured budget by the number of in-flight requests.
 - **`aud` strictness may break real clients.** Requiring the token endpoint URL and rejecting the issuer identifier is the narrower reading of RFC 7523 section 3. Some client libraries default to the issuer. Discovery advertises the token endpoint, so a correct client can find it, but expect support questions; relaxing to accept either value later is a one-line change to the `audience` option.
@@ -544,7 +544,7 @@ New file `packages/db/src/schema/approval-requests.ts`; export from `packages/db
 
 Indexes: `index("idx_approval_requests_tenant_status").on(tenantId, status, createdAt.desc())`, `index("idx_approval_requests_application_id").on(applicationId)`.
 
-`decided_by` is an FK to `admin_users` rather than the free-text `decided_by` sketched in `Tasks.md`: the artboard's "Decided by" column needs the admin's **name**, and an FK gives it with a left join instead of parsing `user:<uuid>` strings. `status='expired'` and an API-key actor both leave it null; the DTO derives the label (see below).
+`decided_by` is an FK to `admin_users` rather than the free-text `decided_by` sketched in `Tasks.md`: the artboard's "Decided by" column needs the admin's **name**, and an FK gives it with a left join instead of parsing `user:<uuid>` strings. `status='expired'` leaves it null; the DTO derives the label (see below).
 
 Also in `0004`: `ALTER TYPE token_event_outcome ADD VALUE 'pending'` (edit `packages/db/src/schema/token-events.ts`, regenerate). PostgreSQL 16 permits `ADD VALUE` inside the migration transaction as long as the value is not used in the same transaction, which it is not.
 
@@ -640,7 +640,7 @@ Order inside `issueToken`, unchanged above the new step:
 4. `signAndRecord(..., ttlSeconds: 300)`.
    Trade-off: if signing fails after step 1 the approval is burned and the agent must request again. Accepted — the alternative is a transaction held across an EC key operation.
 
-**D. `decideApproval(tenantId, approvalId, decision, actor)`** — `UPDATE … SET status=$decision, decided_by=$userId, decided_at=now() WHERE id AND tenant_id AND status='pending' AND expires_at > now() RETURNING *`; 0 rows → re-read → `404 approval_not_found` or `409`. `decided_by` is null for an `ADMIN_API_KEY` actor; the DTO then reports `{kind:"api-key", label:"API key"}`.
+**D. `decideApproval(tenantId, approvalId, decision, actor)`** — `UPDATE … SET status=$decision, decided_by=$userId, decided_at=now() WHERE id AND tenant_id AND status='pending' AND expires_at > now() RETURNING *`; 0 rows → re-read → `404 approval_not_found` or `409`. `decided_by` is the deciding user's id.
 
 **E. Expiry job** — `apps/api/src/jobs/approval-expiry.job.ts`, `intervalMs: 60_000`, `UPDATE approval_requests SET status='expired' WHERE status='pending' AND expires_at <= now()`; append to the `jobs` array in `apps/api/src/jobs/index.ts`. The job exists so expired rows reach the Resolved tab; the poll path checks `expires_at` itself and does not depend on it.
 
@@ -1009,7 +1009,8 @@ Where the shipped code differs from this note (the code is the reference; see [a
 - `decidedBy.label` is snapshotted at decision time (`decided_by_label`), so deleted users and rules keep their name.
 - A Handsal subject token's `aud` must equal the exchange `resource`; issued tokens carry `sub_kind`, from which `mayActFor` is classified (`users` for `user`, `services`/`tenant` for `service`, `tenant` for `agent`); an external IdP's `act` is never propagated; `act` nesting is capped at 3 (`act_chain_too_deep`).
 - External IdP tokens need `exp`, are verified with 5 s tolerance and the algorithms RS256/PS256/ES256/ES384/EdDSA; JWKS fetches do not follow redirects and the cache holds 100 entries.
-- `approvalWebhookUrl` and `externalIdp.jwksUri` go through an outbound URL guard (https and no internal hosts in production; checks the URL, not the resolved address).
+- `approvalWebhookUrl` and `externalIdp.jwksUri` go through an outbound URL guard. In production the name is resolved, any internal answer is rejected, and the fetch is pinned to the address resolved beforehand. Redirects are not followed.
+- There is no `ADMIN_API_KEY`. Management routes accept the session cookie only. A `decidedBy.kind` of `api-key` is only a label stored before that credential was removed.
 - Rules: a `task_id_prefix`-only condition is `invalid_rule_condition`; a rule on a scope whose `agent_policy` is not `approval` is `scope_not_approval`.
 - The admin UI ships a webhook settings form (the note assumed API-only).
 - Auto-approve rules are API-only; there is no UI.

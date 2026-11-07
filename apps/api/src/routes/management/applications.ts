@@ -49,11 +49,7 @@ applicationRoutes.get("/:tenantId/applications", requireTenantAccess("auditor"),
 applicationRoutes.post("/:tenantId/applications", requireTenantAccess("admin"), async (c) => {
   const input = createBodySchema.parse(await readJson(c));
   const actor = c.var.actor;
-  const created = await createApplication(
-    c.req.param("tenantId"),
-    input,
-    actor.kind === "user" ? actor.userId : undefined,
-  );
+  const created = await createApplication(c.req.param("tenantId"), input, actor.userId);
   return c.json(created, 201);
 });
 

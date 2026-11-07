@@ -90,11 +90,6 @@ describe("productionEnvSchema", () => {
     ).toBeDefined();
   });
 
-  it("rejects a 32-char ADMIN_API_KEY in production but accepts 48", () => {
-    expect(fieldErrors(prodEnv({ ADMIN_API_KEY: "k".repeat(32) })).ADMIN_API_KEY).toBeDefined();
-    expect(fieldErrors(prodEnv({ ADMIN_API_KEY: "k".repeat(48) })).ADMIN_API_KEY).toBeUndefined();
-  });
-
   it("rejects localhost CORS_ORIGINS in production", () => {
     expect(
       fieldErrors(prodEnv({ CORS_ORIGINS: "http://localhost:5173" })).CORS_ORIGINS,
@@ -107,7 +102,6 @@ describe("productionEnvSchema", () => {
       DATABASE_URL: "postgresql://handsal:handsal_dev@localhost:5434/handsal",
       PUBLIC_URL: "http://localhost:3000",
       KEY_ENCRYPTION_SECRET: PLACEHOLDER_ENC_SECRET,
-      ADMIN_API_KEY: "k".repeat(32),
     };
     expect(productionEnvSchema.safeParse(dev).success).toBe(true);
   });
@@ -148,12 +142,5 @@ describe("productionEnvSchema", () => {
         }),
       ).BOOTSTRAP_ADMIN_PASSWORD,
     ).toEqual([expect.stringContaining("placeholder")]);
-  });
-
-  it("rejects a 31-char ADMIN_API_KEY everywhere", () => {
-    expect(
-      fieldErrors(prodEnv({ NODE_ENV: "development", ADMIN_API_KEY: "k".repeat(31) }))
-        .ADMIN_API_KEY,
-    ).toBeDefined();
   });
 });

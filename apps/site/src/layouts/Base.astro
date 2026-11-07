@@ -1,0 +1,142 @@
+---
+import "@fontsource/inter/latin-400.css";
+import "@fontsource/inter/latin-500.css";
+import "@fontsource/inter/latin-600.css";
+import "@fontsource/inter/latin-ext-400.css";
+import "@fontsource/inter/latin-ext-500.css";
+import "@fontsource/inter/latin-ext-600.css";
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-500.css";
+import "@fontsource/space-grotesk/latin-500.css";
+import "@fontsource/space-grotesk/latin-600.css";
+import "@fontsource/space-grotesk/latin-ext-500.css";
+import "@fontsource/space-grotesk/latin-ext-600.css";
+import "../styles/global.css";
+import { authorUrl, githubUrl, homePath, localePath, messages, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+  title: string;
+  description: string;
+  robots?: string;
+  /** Path without a locale prefix, starting with `/`. Defaults to the landing page. */
+  path?: string;
+}
+
+const { locale, title, description, robots, path = "/" } = Astro.props;
+const copy = messages[locale];
+const siteUrl = (process.env.SITE_URL ?? "").replace(/\/$/, "");
+const home = homePath(locale);
+const current = localePath(locale, path);
+
+function absolute(pathname: string): string {
+  return siteUrl ? new URL(pathname, siteUrl).href : pathname;
+}
+
+const canonical = siteUrl && !robots ? absolute(current) : "";
+const languages = [
+  { locale: "en" as const, href: localePath("en", path), label: "English" },
+  { locale: "pl" as const, href: localePath("pl", path), label: "Polski" },
+];
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {robots && <meta name="robots" content={robots} />}
+    <meta name="theme-color" content="#F6F6F7" />
+    {canonical && <link rel="canonical" href={canonical} />}
+    {
+      !robots &&
+        languages.map((language) => (
+          <link rel="alternate" hreflang={language.locale} href={absolute(language.href)} />
+        ))
+    }
+    {!robots && <link rel="alternate" hreflang="x-default" href={absolute(localePath("en", path))} />}
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content={locale === "pl" ? "pl_PL" : "en_US"} />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip" href="#content">{copy.skip}</a>
+    <header>
+      <div class="wrap header-inner">
+        <a class="brand" href={home}>
+          <span class="mark" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M9 17H7A5 5 0 0 1 7 7h2"
+                stroke="#fff"
+                stroke-width="2.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"></path>
+              <path
+                d="M15 7h2a5 5 0 0 1 0 10h-2"
+                stroke="#fff"
+                stroke-width="2.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"></path>
+              <path
+                d="M8 12h8"
+                stroke="#fff"
+                stroke-width="2.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"></path>
+            </svg>
+          </span>
+          Handsal
+        </a>
+        <div class="header-end">
+          <nav class="nav" aria-label={copy.page}>
+            <a href={`${home}#shape`}>{copy.how}</a>
+            <a href={`${home}#run`}>{copy.runNav}</a>
+            <a href={localePath(locale, "/docs")}>{copy.docs}</a>
+            <a href={githubUrl}>{copy.source}</a>
+          </nav>
+          <nav class="lang" aria-label={copy.language}>
+            {
+              languages.map((language, index) => (
+                <>
+                  {index > 0 && (
+                    <span class="sep" aria-hidden="true">
+                      /
+                    </span>
+                  )}
+                  <a
+                    href={language.href}
+                    hreflang={language.locale}
+                    lang={language.locale}
+                    aria-current={language.locale === locale ? "page" : undefined}
+                  >
+                    {language.label}
+                  </a>
+                </>
+              ))
+            }
+          </nav>
+        </div>
+      </div>
+    </header>
+    <slot />
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <div>
+          <p>{copy.footer}</p>
+          <p class="credit">
+            {copy.madeBy} <a href={authorUrl}>falowski.dev</a>
+            <span class="sep" aria-hidden="true">/</span>
+            <a href={githubUrl}>GitHub</a>
+          </p>
+        </div>
+        <a href={`${githubUrl}/blob/main/docs/integration.md`}>{copy.integration}</a>
+      </div>
+    </footer>
+  </body>
+</html>

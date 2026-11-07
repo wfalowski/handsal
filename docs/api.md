@@ -99,9 +99,8 @@ Available unless `ENABLE_ADMIN_PANEL=false` (then `404 {"error":"not_found"}`). 
 
 ### Authentication
 
-- Session: `POST /api/auth/login` sets the `handsal_session` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` in production, 12 h) and returns `{user:{id,email,name,isSuperAdmin}, csrfToken}`. Send the token as `X-CSRF-Token` on every `POST`, `PUT`, `PATCH` and `DELETE`; without it the call fails with `403 csrf_required`.
-- API key: `Authorization: Bearer <ADMIN_API_KEY>`. Acts as a super-admin; no CSRF header needed. Use it for scripts.
-- Roles per tenant: `auditor` (read), `admin` (everything except members, pause/resume, revoke-all-tenant, delete tenant), `owner` (everything). Super-admins and the API key count as `owner` everywhere. A tenant that does not exist or that you are not a member of is `404 tenant_not_found`; a role that is too low is `403 forbidden`.
+- Session: `POST /api/auth/login` with `{email, password}` sets the `handsal_session` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` in production, 12 h) and returns `{user:{id,email,name,isSuperAdmin}, csrfToken}`. Send that cookie and the token as `X-CSRF-Token` on every `POST`, `PUT`, `PATCH` and `DELETE`; without the token the call fails with `403 csrf_required`. Scripts use the same login. A bearer token is not accepted.
+- Roles per tenant: `auditor` (read), `admin` (everything except members, pause/resume, revoke-all-tenant, delete tenant), `owner` (everything). A super-admin counts as `owner` everywhere. A tenant that does not exist or that you are not a member of is `404 tenant_not_found`; a role that is too low is `403 forbidden`.
 
 Common errors on every route: `401 unauthenticated`, `403 csrf_required`, `400 validation_error` (`details` holds the flattened Zod errors), `404 tenant_not_found`, `403 forbidden`.
 
@@ -118,7 +117,7 @@ Common errors on every route: `401 unauthenticated`, `403 csrf_required`, `400 v
 | GET | `/api/tenants` | any | none | 200 `[{...tenant, appCount, resourceCount, tokens24h, role}]` | |
 | POST | `/api/tenants` | any user | `{name, slug}` (`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`) | 201 tenant; creator becomes `owner`; first signing key is created | 409 `slug_exists` |
 | GET | `/api/tenants/:tenantId` | auditor | none | 200 tenant + `discoveryUrl`, `jwksUrl`, `stats`, `role` | |
-| PATCH | `/api/tenants/:tenantId` | admin | `{name?, defaultTokenTtlSeconds? (60-86400), introspectionEnabled?, keyRotationDays? (1-3650 or null), externalIdp? (object or null), approvalWebhookUrl? (or null), approvalWebhookSecret? (16-255 chars, or null)}` | 200 tenant | 400 `validation_error` (webhook URL or `jwksUri` not `https`, `http` webhooks are allowed outside production; either pointing at `localhost`, `*.local`, `*.internal` or a literal loopback, link-local, private or unique-local IP) |
+| PATCH | `/api/tenants/:tenantId` | admin | `{name?, defaultTokenTtlSeconds? (60-86400), introspectionEnabled?, keyRotationDays? (1-3650 or null), externalIdp? (object or null), approvalWebhookUrl? (or null), approvalWebhookSecret? (16-255 chars, or null)}` | 200 tenant | 400 `validation_error` (webhook URL or `jwksUri` not `https`, `http` is allowed outside production; in production a name or literal in loopback, link-local, RFC 1918, CGNAT, `0/8` or unique-local, or `localhost` / `*.localhost` / `*.internal` / `*.local`, or a name that resolves to one of those) |
 | POST | `/api/tenants/:tenantId/pause` | owner | none | 200 tenant (`status:"paused"`): token requests fail, introspection returns inactive, JWKS still served | |
 | POST | `/api/tenants/:tenantId/resume` | owner | none | 200 tenant | |
 | POST | `/api/tenants/:tenantId/revoke-all-tokens` | owner | none | 200 tenant (`tokensNotBefore` = now) | |
@@ -128,7 +127,7 @@ Tenant: `{id, name, slug, status:"active"|"paused", defaultTokenTtlSeconds, intr
 
 - `externalIdp`: `{issuer, jwksUri, audience}` or `null`. A trusted identity provider whose JWTs may be the `subject_token` of a [token exchange](#token-exchange-grant); `jwksUri` must be `https` in production; one IdP per tenant. JWKS fetches do not follow redirects, and at most 100 JWKS caches are held per process.
 - `approvalWebhookUrl`: where Handsal POSTs new pending approvals (see the [integration guide](integration.md#7-human-approval-for-agent-scopes)), or `null`. Must be `https` in production.
-- `approvalWebhookUrl` and `externalIdp.jwksUri` pass an outbound URL guard (`400 validation_error`): `https` is required in production (`http` is also allowed elsewhere), and in production literal loopback, link-local, RFC 1918 and unique-local addresses and the hostnames `localhost`, `*.localhost`, `*.internal` and `*.local` are rejected; outside production they are allowed for local development. The guard checks the URL, not the resolved address, so DNS rebinding is not covered.
+- `approvalWebhookUrl` and `externalIdp.jwksUri` pass an outbound URL guard (`400 validation_error`): `https` is required in production (`http` is also allowed elsewhere). In production, literal loopback, link-local, RFC 1918, CGNAT (`100.64/10`), `0/8` and unique-local addresses, and the names `localhost`, `*.localhost`, `*.internal` and `*.local`, are rejected. A hostname is resolved and refused when any answer is internal; a name that cannot be resolved is `400` ("could not be resolved"). The fetch then connects only to the address resolved before the request, and redirects are not followed. Outside production those addresses are allowed and names are not resolved.
 - `approvalWebhookSecret` is write-only (16-255 characters, stored encrypted); reads return `approvalWebhookSecretSet: true|false`. Send `null` to remove it.
 
 ### Applications
@@ -168,7 +167,7 @@ A non-UUID `:keyId` is also `404 application_key_not_found`. Switching an applic
 
 ### Approvals
 
-Requests of `agent` applications for `approval` scopes (see [Human approval](#human-approval-grant)). Approval: `{id, applicationId, applicationName, clientId, audience, scopes, actorHint, taskId, justification, status:"pending"|"approved"|"denied"|"expired", expiresAt, createdAt, decidedAt, decidedBy}`; `decidedBy` is `{kind:"user"|"rule"|"api-key", label}` or `null` while pending; the `label` is snapshotted when the decision is made, so deleting the user or rule later keeps the name.
+Requests of `agent` applications for `approval` scopes (see [Human approval](#human-approval-grant)). Approval: `{id, applicationId, applicationName, clientId, audience, scopes, actorHint, taskId, justification, status:"pending"|"approved"|"denied"|"expired", expiresAt, createdAt, decidedAt, decidedBy}`; `decidedBy` is `{kind:"user"|"rule"|"api-key", label}` or `null` while pending; the `label` is snapshotted when the decision is made, so deleting the user or rule later keeps the name. `api-key` appears only on decisions stored before that credential was removed.
 
 | Method | Path | Min role | Body / query | Success | Specific errors |
 |---|---|---|---|---|---|

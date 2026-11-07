@@ -12,10 +12,8 @@ import {
 import { errorHandler } from "./error-handler.js";
 import { requireTenantAccess } from "./tenant-access.js";
 
-const API_KEY = "k".repeat(40);
-
 const probe = new Hono<AdminEnv>();
-probe.use("*", createAdminAuth({ apiKey: API_KEY }));
+probe.use("*", createAdminAuth());
 probe.get("/api/tenants/:tenantId/probe", requireTenantAccess("admin"), (c) =>
   c.json({ role: c.var.tenantRole }),
 );
@@ -77,14 +75,5 @@ describe('requireTenantAccess("admin")', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ role: "owner" });
     expect((await asUser(user.id, randomUUID())).status).toBe(404);
-  });
-
-  it("API key → 200 as owner", async () => {
-    const tenant = await createTenant();
-    const res = await probe.request(`/api/tenants/${tenant.id}/probe`, {
-      headers: { authorization: `Bearer ${API_KEY}` },
-    });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ role: "owner" });
   });
 });

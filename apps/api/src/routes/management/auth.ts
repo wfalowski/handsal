@@ -95,10 +95,12 @@ authRoutes.get("/me", async (c) => {
   const tenants = actor.isSuperAdmin
     ? await listAllTenantsAsOwner()
     : await listTenantsForUser(actor.userId);
-  const user =
-    actor.kind === "user"
-      ? { id: actor.userId, email: actor.email, name: actor.name, isSuperAdmin: actor.isSuperAdmin }
-      : { id: null, email: null, name: "API key", isSuperAdmin: true };
+  const user = {
+    id: actor.userId,
+    email: actor.email,
+    name: actor.name,
+    isSuperAdmin: actor.isSuperAdmin,
+  };
   // The SPA loses its in-memory CSRF token on reload; re-derive it from the session cookie.
   const session = getCookie(c, SESSION_COOKIE);
   const csrfToken = session ? csrfTokenFor(session) : null;

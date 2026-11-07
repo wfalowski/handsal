@@ -227,8 +227,8 @@ function toDto({
   if (deciderName !== null) decidedBy = { kind: "user", label: a.decidedByLabel ?? deciderName };
   else if (a.decidedByRuleId !== null)
     decidedBy = { kind: "rule", label: a.decidedByLabel ?? `rule: ${ruleScopeName}` };
-  // No surviving user or rule id: the ADMIN_API_KEY actor, or a deleted user / rule whose stored
-  // label still says who decided (rule labels start with "rule: "). Expiry never sets decided_at.
+  // User or rule row is gone. A label of "API key" is a decision stored before that
+  // credential was removed. Rule labels start with "rule: ". Expiry never sets decided_at.
   else if (a.decidedAt !== null) {
     const label = a.decidedByLabel ?? "API key";
     const kind = label === "API key" ? "api-key" : label.startsWith("rule: ") ? "rule" : "user";
@@ -370,8 +370,8 @@ export async function decideApproval(
     .update(approvalRequests)
     .set({
       status: decision,
-      decidedBy: actor.kind === "user" ? actor.userId : null,
-      decidedByLabel: actor.kind === "user" ? actor.name : "API key",
+      decidedBy: actor.userId,
+      decidedByLabel: actor.name,
       decidedAt: sql`now()`,
     })
     .where(

@@ -29,7 +29,6 @@ export const envSchema = z.object({
     .string()
     .length(64)
     .regex(/^[0-9a-f]{64}$/i, "Must be 64 hex characters (32 bytes)"),
-  ADMIN_API_KEY: z.string().min(32, "ADMIN_API_KEY must be at least 32 characters").optional(),
   BOOTSTRAP_ADMIN_EMAIL: z.email().optional(),
   BOOTSTRAP_ADMIN_PASSWORD: z.string().min(12).optional(),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -122,13 +121,6 @@ export const productionEnvSchema = envSchema.superRefine((data, ctx) => {
       message:
         "KEY_ENCRYPTION_SECRET is a low-entropy repeated pattern; generate a random 32-byte key with `openssl rand -hex 32`",
       path: ["KEY_ENCRYPTION_SECRET"],
-    });
-  }
-  if (data.ADMIN_API_KEY !== undefined && data.ADMIN_API_KEY.length < 48) {
-    ctx.addIssue({
-      code: "custom",
-      message: "ADMIN_API_KEY must be at least 48 characters in production",
-      path: ["ADMIN_API_KEY"],
     });
   }
   if (data.CORS_ORIGINS.includes("localhost")) {

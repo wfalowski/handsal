@@ -113,7 +113,7 @@ export async function listTenantsForUser(userId: string): Promise<UserTenant[]> 
   return rows.map((t) => ({ ...t, issuer: issuerFor(t.slug) }));
 }
 
-/** Every tenant as `owner` (super-admin / API key view). */
+/** Every tenant as `owner` (super-admin view). */
 export async function listAllTenantsAsOwner(): Promise<UserTenant[]> {
   const rows = await db
     .select({ id: tenants.id, name: tenants.name, slug: tenants.slug })

@@ -149,7 +149,7 @@ export async function createApprovalRule(
       tenantId,
       scopeId: input.scopeId,
       condition: input.condition,
-      createdBy: actor.kind === "user" ? actor.userId : null,
+      createdBy: actor.userId,
     })
     .returning({ id: approvalRules.id });
   const [row] = await selectRuleDtos().where(

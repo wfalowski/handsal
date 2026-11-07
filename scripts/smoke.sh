@@ -4,8 +4,10 @@ set -euo pipefail
 
 BASE="${HANDSAL_URL:-http://localhost:3000}"
 BASE="${BASE%/}"
-: "${ADMIN_API_KEY:?ADMIN_API_KEY is required}"
+: "${SMOKE_ADMIN_EMAIL:?SMOKE_ADMIN_EMAIL is required}"
+: "${SMOKE_ADMIN_PASSWORD:?SMOKE_ADMIN_PASSWORD is required}"
 AUD="https://smoke.example/api"
+JAR="$(mktemp)"
 SLUG="smoke-$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
 TENANT_ID=""
 PASS=0
@@ -29,12 +31,13 @@ req() {
 }
 expect() { [ "$STATUS" = "$1" ] || fail "$2: expected HTTP $1, got $STATUS"; }
 eq() { [ "$1" = "$2" ] || fail "$3: expected '$2', got '$1'"; }
-adm() { local method="$1" path="$2"; shift 2; req "$method" "$BASE$path" -H "Authorization: Bearer $ADMIN_API_KEY" "$@"; }
+adm() { local method="$1" path="$2"; shift 2; req "$method" "$BASE$path" -b "$JAR" -H "X-CSRF-Token: $CSRF" "$@"; }
 admj() { local method="$1" path="$2" data="$3"; adm "$method" "$path" -H "Content-Type: application/json" -d "$data"; }
 
 cleanup() {
   local code=$?
   trap - EXIT
+  rm -f "$JAR"
   if [ -n "$TENANT_ID" ]; then
     admj DELETE "/api/tenants/$TENANT_ID" "{\"confirmSlug\":\"$SLUG\"}" || true
     if [ "$STATUS" = "204" ]; then
@@ -63,9 +66,16 @@ b64url_decode() {
 req GET "$BASE/health"; expect 200 "GET /health"; ok "health"
 req GET "$BASE/ready"; expect 200 "GET /ready"; ok "ready"
 
+# --- admin session ---
+req POST "$BASE/api/auth/login" -c "$JAR" -H "Content-Type: application/json" \
+  -d "$(jq -nc --arg email "$SMOKE_ADMIN_EMAIL" --arg password "$SMOKE_ADMIN_PASSWORD" '{email:$email,password:$password}')"
+expect 200 "login (super-admin email and password)"
+CSRF="$(jq -er .csrfToken <<<"$BODY")" || fail "login did not return csrfToken"
+ok "logged in"
+
 # --- management setup ---
 admj POST /api/tenants "{\"name\":\"Smoke $SLUG\",\"slug\":\"$SLUG\"}"
-expect 201 "create tenant (is ADMIN_API_KEY correct?)"
+expect 201 "create tenant"
 TENANT_ID=$(jq -er .id <<<"$BODY") || fail "tenant id missing"
 ok "created tenant $SLUG ($TENANT_ID)"
 

@@ -2,11 +2,8 @@
 import { approvalRequests, db, pool, runMigrations } from "@handsal/db";
 import type { TenantRole } from "@handsal/shared";
 import { eq } from "drizzle-orm";
-import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { app } from "../../app.js";
-import { type AdminEnv, createAdminAuth, csrfProtection } from "../../middleware/admin-auth.js";
-import { errorHandler } from "../../middleware/error-handler.js";
 import {
   addMember,
   createAdminUser,
@@ -17,7 +14,6 @@ import {
   truncateAll,
 } from "../../test/factories.js";
 import { jsonRequest, loginAs } from "../../test/helpers.js";
-import { approvalRoutes } from "./approvals.js";
 
 beforeAll(async () => {
   await runMigrations();
@@ -28,12 +24,6 @@ beforeEach(async () => {
 afterAll(async () => {
   await pool.end();
 });
-
-const API_KEY = "k".repeat(40);
-const apiKeyApp = new Hono<AdminEnv>();
-apiKeyApp.use("*", createAdminAuth({ apiKey: API_KEY }), csrfProtection);
-apiKeyApp.route("/api/tenants", approvalRoutes);
-apiKeyApp.onError(errorHandler);
 
 type Session = { cookie: string; csrf: string };
 
@@ -112,7 +102,7 @@ describe("approvals management", () => {
     }
   });
 
-  it("auditor lists but cannot decide; super-admin and API key can", async () => {
+  it("auditor lists but cannot decide; a super-admin can", async () => {
     const s = await setup();
     const row = await s.make();
     const auditor = await sessionFor(s.tenant.id, "auditor");
@@ -121,20 +111,9 @@ describe("approvals management", () => {
     expect(forbidden.status).toBe(403);
 
     const superAdmin = await sessionFor(null, null, true);
-    expect((await call(superAdmin, "POST", `${s.base}/${row.id}/deny`)).status).toBe(200);
-
-    const other = await s.make();
-    const res = await jsonRequest(apiKeyApp, "POST", `${s.base}/${other.id}/approve`, undefined, {
-      authorization: `Bearer ${API_KEY}`,
-    });
+    const res = await call(superAdmin, "POST", `${s.base}/${row.id}/deny`);
     expect(res.status).toBe(200);
-    const dto = await res.json();
-    expect(dto.decidedBy).toEqual({ kind: "api-key", label: "API key" });
-    const [stored] = await db
-      .select()
-      .from(approvalRequests)
-      .where(eq(approvalRequests.id, other.id));
-    expect(stored.decidedBy).toBeNull();
+    expect((await res.json()).decidedBy).toEqual({ kind: "user", label: "Jane Admin" });
   });
 
   it("non-member → 404 on list and approve; another tenant's id → 404", async () => {

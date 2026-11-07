@@ -66,7 +66,7 @@ export async function getTenantById(id: string): Promise<Tenant | null> {
 
 /**
  * Tenants with dashboard counters. `memberUserId` limits the list to that user's memberships
- * (with their role); omit it for the super-admin / API-key view (every tenant as `owner`).
+ * (with their role); omit it for the super-admin view (every tenant as `owner`).
  * One grouped subquery per counter, left-joined: no N+1.
  */
 export async function listTenantsWithStats(memberUserId?: string): Promise<TenantListItem[]> {
@@ -124,7 +124,7 @@ export async function listTenantsWithStats(memberUserId?: string): Promise<Tenan
 
 /**
  * One transaction: insert tenant → first signing key → creator as `owner`
- * (`creatorUserId` is omitted for the API key, which gets no membership).
+ * (`creatorUserId` omitted means no membership row).
  */
 export async function createTenant(
   input: TenantCreateInput,

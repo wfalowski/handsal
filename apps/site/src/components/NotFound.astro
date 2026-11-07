@@ -1,0 +1,26 @@
+---
+import Base from "../layouts/Base.astro";
+import { homePath, messages, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const copy = messages[locale];
+---
+
+<Base
+  locale={locale}
+  title={copy.notFoundMeta}
+  description={copy.notFoundDescription}
+  robots="noindex"
+>
+  <main class="wrap miss" id="content">
+    <h1>{copy.notFoundTitle}</h1>
+    <p>{copy.notFoundBody}</p>
+    <div class="actions">
+      <a class="button" href={homePath(locale)}>{copy.notFoundHome}</a>
+    </div>
+  </main>
+</Base>

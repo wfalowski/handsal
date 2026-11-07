@@ -1,0 +1,154 @@
+---
+import Base from "../layouts/Base.astro";
+import { githubUrl, homePath, localePath, messages, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const copy = messages[locale];
+const here = homePath(locale);
+---
+
+<Base locale={locale} title={copy.metaTitle} description={copy.description}>
+  <main id="content">
+    <div class="wrap hero">
+      <div>
+        <h1>{copy.heroTitle}</h1>
+        <p class="lead">{copy.lead}</p>
+        <div class="actions">
+          <a class="button" href={`${here}#run`}>{copy.run}</a>
+          <a href={`${here}#call`}>{copy.callLink}</a>
+        </div>
+      </div>
+      <figure class="specimen">
+        <figcaption>{copy.tokenCaption}</figcaption>
+        <dl>
+          <div class="row">
+            <dt>iss</dt>
+            <dd class="iss">https://auth.example.com<wbr />/t/acme</dd>
+          </div>
+          <div class="row">
+            <dt>aud</dt>
+            <dd>https://api.acme.example<wbr />/orders</dd>
+          </div>
+          <div class="row">
+            <dt>scope</dt>
+            <dd>orders:read</dd>
+          </div>
+          <div class="row">
+            <dt>exp</dt>
+            <dd>{copy.exp}</dd>
+          </div>
+          <div class="row">
+            <dt>sub</dt>
+            <dd>app_k7mn2p4qr5s6tvwx2abc</dd>
+          </div>
+          <div class="row quiet">
+            <dt>alg</dt>
+            <dd>ES256</dd>
+          </div>
+          <div class="row quiet">
+            <dt>kid</dt>
+            <dd>k_2026-11-07_c4e1</dd>
+          </div>
+        </dl>
+      </figure>
+    </div>
+
+    <section class="band" id="uses" aria-labelledby="uses-title">
+      <div class="wrap">
+        <h2 id="uses-title">{copy.useTitle}</h2>
+        <ul class="cases">
+          {
+            copy.cases.map((item) => (
+              <li>
+                <p class="scene">{item.scene}</p>
+                <h3>{item.title}</h3>
+                <p>{item.body}</p>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" id="shape" aria-labelledby="shape-title">
+      <div class="wrap">
+        <h2 id="shape-title">{copy.shapeTitle}</h2>
+        <ul class="facts">
+          {
+            copy.facts.map((fact) => (
+              <li>
+                <h3>{fact.title}</h3>
+                <p>{fact.body}</p>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </section>
+
+    <section class="band" id="call" aria-labelledby="call-title">
+      <div class="wrap column">
+        <h2 id="call-title">{copy.callTitle}</h2>
+        <fieldset class="calls">
+          <legend>{copy.callTabs}</legend>
+          <input id="call-service" type="radio" name="call" checked />
+          <input id="call-agent" type="radio" name="call" />
+          <div class="segment">
+            <label for="call-service">{copy.tabService}</label>
+            <label for="call-agent">{copy.tabAgent}</label>
+          </div>
+          <ol class="steps service-panel">
+            {
+              copy.serviceSteps.map((step, index) => (
+                <li>
+                  <span class="step-no" aria-hidden="true">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <h3>{step.title}</h3>
+                    <p>{step.body}</p>
+                  </div>
+                </li>
+              ))
+            }
+          </ol>
+          <ol class="steps agent-panel">
+            {
+              copy.agentSteps.map((step, index) => (
+                <li>
+                  <span class="step-no" aria-hidden="true">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <h3>{step.title}</h3>
+                    <p>{step.body}</p>
+                  </div>
+                </li>
+              ))
+            }
+          </ol>
+        </fieldset>
+      </div>
+    </section>
+
+    <section class="band" id="run" aria-labelledby="run-title">
+      <div class="wrap">
+        <div class="column">
+          <h2 id="run-title">{copy.runTitle}</h2>
+          <p>{copy.runBody}</p>
+        </div>
+        <pre><code>docker compose -f <span class="nowrap">docker-compose.prod.yml</span> up -d</code></pre>
+        <p class="note">{copy.listens}</p>
+        <div class="links">
+          <a href={`${githubUrl}/blob/main/docs/deployment.md`}>{copy.deployment}</a>
+          <a href={`${githubUrl}/blob/main/docs/integration.md`}>{copy.integration}</a>
+          <a href={localePath(locale, "/docs/sdk")}>{copy.docsSdk}</a>
+        </div>
+      </div>
+    </section>
+  </main>
+</Base>

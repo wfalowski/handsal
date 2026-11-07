@@ -14,9 +14,13 @@ import {
 } from "../utils/security-logger.js";
 import { ApiError } from "./error-handler.js";
 
-export type Actor =
-  | { kind: "user"; userId: string; email: string; name: string; isSuperAdmin: boolean }
-  | { kind: "api-key"; isSuperAdmin: true };
+export type Actor = {
+  kind: "user";
+  userId: string;
+  email: string;
+  name: string;
+  isSuperAdmin: boolean;
+};
 
 /** Hono env for management routers: `c.var.actor` set by `adminAuth`, `c.var.tenantRole` by `requireTenantAccess`. */
 export type AdminEnv = {
@@ -116,29 +120,9 @@ function authFailure(c: Context, reason: string): ApiError {
   return new ApiError(401, "unauthenticated", "Authentication required");
 }
 
-/**
- * Accepts `Authorization: Bearer <ADMIN_API_KEY>` (super-admin, no CSRF) or the
- * session cookie. `apiKey` is injectable for tests; undefined disables the bearer path.
- */
-export function createAdminAuth({
-  apiKey = env.ADMIN_API_KEY,
-}: {
-  apiKey?: string;
-} = {}): MiddlewareHandler<AdminEnv> {
-  const apiKeyBuf = apiKey === undefined ? undefined : Buffer.from(apiKey);
-
+/** Accepts the admin session cookie. A bearer token is not a management credential. */
+export function createAdminAuth(): MiddlewareHandler<AdminEnv> {
   return async (c, next) => {
-    const authHeader = c.req.header("Authorization");
-    if (apiKeyBuf && authHeader?.startsWith("Bearer ")) {
-      const given = Buffer.from(authHeader.slice(7));
-      if (given.length !== apiKeyBuf.length || !crypto.timingSafeEqual(given, apiKeyBuf)) {
-        throw authFailure(c, "invalid_api_key");
-      }
-      c.set("actor", { kind: "api-key", isSuperAdmin: true });
-      await next();
-      return;
-    }
-
     const token = getCookie(c, SESSION_COOKIE);
     if (!token) throw authFailure(c, "no_credentials");
     const session = verifySessionToken(token);
@@ -164,7 +148,7 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** Requires `X-CSRF-Token` on mutating requests from session actors. Runs after `adminAuth`. */
 export const csrfProtection: MiddlewareHandler<AdminEnv> = async (c, next) => {
-  if (!SAFE_METHODS.has(c.req.method) && c.var.actor.kind === "user") {
+  if (!SAFE_METHODS.has(c.req.method)) {
     const token = getCookie(c, SESSION_COOKIE) ?? "";
     const header = c.req.header("X-CSRF-Token") ?? "";
     if (!header || !safeEqual(header, csrfTokenFor(token))) {

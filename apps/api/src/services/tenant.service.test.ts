@@ -83,7 +83,7 @@ describe("createTenant", () => {
     expect(members).toEqual([{ tenantId: tenant.id, adminUserId: user.id, role: "owner" }]);
   });
 
-  it("without a creator (API key) adds no membership", async () => {
+  it("without a creator adds no membership", async () => {
     const tenant = await createTenant({ name: "Acme", slug: "acme" });
     expect(await countWhere(signingKeys, tenant.id)).toBe(1);
     const [{ n }] = await db

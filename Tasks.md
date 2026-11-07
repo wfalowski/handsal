@@ -6,11 +6,11 @@
 
 **Goal:** An open-source, self-hostable, multi-tenant machine-to-machine OAuth 2.0 authorization server (client-credentials grant, ES256 JWTs, introspection, revocation, JWKS, per-tenant issuers) with an admin UI, shipped as **one Docker image** plus a production `docker-compose` with PostgreSQL.
 
-**Architecture:** pnpm + Turborepo monorepo. `apps/api` is a Hono (Node 24) server that exposes the OAuth endpoints under `/t/:slug/…`, a session/API-key protected management REST API under `/api/…`, and serves the built React SPA from `/`. `packages/db` is Drizzle ORM + PostgreSQL 16 with migrations run at startup. `packages/shared` holds Zod schemas, constants and types shared by api and web. `apps/web` is React 19 + TanStack Router/Query + Tailwind. Everything is scoped by `tenant_id`; each tenant has its own signing keys and issuer URL.
+**Architecture:** pnpm + Turborepo monorepo. `apps/api` is a Hono (Node 24) server that exposes the OAuth endpoints under `/t/:slug/…`, a session-cookie management REST API under `/api/…`, and serves the built React SPA from `/`. `packages/db` is Drizzle ORM + PostgreSQL 16 with migrations run at startup. `packages/shared` holds Zod schemas, constants and types shared by api and web. `apps/web` is React 19 + TanStack Router/Query + Tailwind. Everything is scoped by `tenant_id`; each tenant has its own signing keys and issuer URL.
 
 **Tech Stack:** TypeScript 5.9 (strict, ESM), Hono 4, `@hono/node-server`, jose 6, drizzle-orm 0.45 + pg 8, argon2, zod 4, pino, React 19, TanStack Router/Query 5, Tailwind 3, Vite 6, Vitest 4, Biome 2, Turbo 2, Docker (node:24-bookworm-slim).
 
-**Spec:** the design canvas (9 artboards) copied to `docs/design/*.dc.html` (`canvas.json` is the index) + the product decisions in this file.
+**Spec:** the design canvas (9 artboards) in `docs/design/*.dc.html` (`canvas.json` is the index) plus the product decisions in this file.
 
 **MVP scope:** everything on artboards 01–07 **except** anything agent-specific (AI-agent kind, agent policy UI, guardrails, approvals, delegation, SSO, forgot-password, p95 latency, CSV export, "Introspect a token" admin tool). Artboards 08 (Agent detail) and 09 (Approvals) are **post-MVP** (Phase 6) — the MVP schema must not block them. Only machine-to-machine flows; no end-user login flows, no authorization-code grant.
 
@@ -20,7 +20,7 @@
 
 | Topic | Decision |
 |---|---|
-| Name / scope | `handsal`, packages `@handsal/api`, `@handsal/web`, `@handsal/db`, `@handsal/shared`. Open source, **no LICENSE file for now** (the "Open source · MIT" line on artboard 01 is wrong — omit it from the UI). |
+| Name / scope | `handsal`, packages `@handsal/api`, `@handsal/web`, `@handsal/db`, `@handsal/shared`. Open source under **Apache License 2.0** (`LICENSE`). The "Open source · MIT" line on artboard 01 is wrong — omit it from the UI. |
 | Tenant issuer | Path-based: `iss = ${PUBLIC_URL}/t/${tenant.slug}`. All OAuth endpoints live under `/t/:slug`. Custom domains per tenant are post-MVP. |
 | Endpoints (per tenant) | `POST /t/:slug/oauth/token`, `POST /t/:slug/oauth/introspect` (RFC 7662), `POST /t/:slug/oauth/revoke` (RFC 7009), `GET /t/:slug/.well-known/openid-configuration`, `GET /t/:slug/.well-known/oauth-authorization-server` (RFC 8414, same body), `GET /t/:slug/.well-known/jwks.json`. |
 | Signing | ES256 (P-256) per tenant, `kid = k_<YYYY-MM-DD>_<4 hex>`. Private keys AES-256-GCM encrypted at rest with `KEY_ENCRYPTION_SECRET`. Key states `active → retiring → retired`; JWKS serves active + retiring. |
@@ -32,7 +32,7 @@
 | JWT claims | `iss, sub (=client_id), client_id, aud (=audience string), scope (space-separated), tenant (=slug), client_kind ("service"\|"agent"), jti (UUIDv7-ish ULID or UUID), iat, exp`. Header `alg=ES256, kid, typ=at+jwt`. |
 | Revocation | `revoked_tokens(jti, tenant_id, expires_at)` + `tokens_not_before` timestamp on tenants and applications ("Revoke all"). Introspection returns `active:false` for revoked, `iat < not_before`, disabled app, or paused tenant. Document that JWT-verifying resource servers only see revocation via introspection. |
 | Token log | `token_events` row for every token request (issued/denied) and every revoke; retention `TOKEN_EVENTS_RETENTION_DAYS` (30). Powers artboard 06. |
-| Admin auth | Email + password (Argon2id), HMAC-signed stateless cookie session, `SameSite=Strict`, `X-CSRF-Token` header required on mutating `/api` calls. Optional `ADMIN_API_KEY` bearer acts as super-admin (automation). Optional `BOOTSTRAP_ADMIN_EMAIL/PASSWORD` creates the first super-admin on startup when `admin_users` is empty. |
+| Admin auth | Email + password (Argon2id), HMAC-signed stateless cookie session, `SameSite=Strict`, `X-CSRF-Token` header required on mutating `/api` calls. Optional `BOOTSTRAP_ADMIN_EMAIL/PASSWORD` creates the first super-admin on startup when `admin_users` is empty. |
 | Roles | `admin_users.is_super_admin` sees every tenant. `tenant_members.role ∈ owner \| admin \| auditor`: auditor = read-only; admin = everything except members, delete/pause tenant; owner = everything. |
 | Rate limits | In-memory dual layer (per IP + per client_id) on token/introspect/revoke. Admin login 5 / 15 min per IP. Redis store is post-MVP. |
 | Observability | pino JSON to stdout, `LOG_LEVEL`. `GET /health` (process up), `GET /ready` (DB `select 1`). No vendor SDKs. |
@@ -107,7 +107,7 @@ Error envelope for `/api`: `{ error: string_code, error_description: string, det
 - Layout: `apps/api/src/{index.ts,env.ts,app.ts,server.ts,middleware/,routes/oauth/,routes/management/,services/,jobs/,utils/,test/}`; `packages/db/src/{schema/,client.ts,migrate.ts,seed.ts,index.ts}`; `packages/shared/src/{constants/,validation/,types/,index.ts}`; `apps/web/src/{main.tsx,router.tsx,routes/,components/,lib/api.ts,lib/queries.ts}`.
 - Hono routes are thin: parse + validate with a schema from `@handsal/shared`, call a `services/*.service.ts` function, return. Services take `tenantId` as the first argument.
 - Errors: throw `OAuthError(code, status, description)` (port `middleware/error-handler.ts`) in OAuth routes; throw `ApiError(status, code, description)` in management routes; one `app.onError` handler maps both.
-- Env is read **only** in `apps/api/src/env.ts` (Zod-parsed at import, `process.exit(1)` on failure). `index.ts` imports `./env.js` first, then dynamically imports `./server.js`.
+- Env is read **only** in `apps/api/src/env.ts` (Zod-parsed at import, `process.exit(1)` on failure). `index.ts` imports `./env.js` first, then dynamically imports `./server.js` so env validation runs before the server module loads.
 - IDs in URLs are UUIDs; `client_id` is a separate opaque string.
 - Timestamps are `timestamptz`; the API returns ISO strings; the web formats relative times.
 - Tests live next to the code as `*.test.ts`; integration tests use `apps/api/src/test/{setup.ts,helpers.ts,factories.ts}` (`createTenant()`, `createApplication()`, `createResourceWithScopes()`, `grant()`, `loginAs()`, `tokenRequest()`).
@@ -120,7 +120,7 @@ Inputs the spec implies but no artboard shows; each has a test pinned to the own
 1. A token request whose `resource` belongs to **another tenant** (same slug path, foreign audience) must fail with `invalid_target`, never leak the resource's existence. → Task 2.3
 2. A rotated secret: old secret works until `previous_secret_expires_at`, fails one second after; new secret works immediately. → Task 2.2
 3. A retiring signing key still verifies in introspection and appears in JWKS until `retires_at`; tokens are never **signed** with it. → Task 2.1
-4. Removing the last `owner` of a tenant, or an auditor calling any mutating route, must be refused (403), including via `ADMIN_API_KEY`-less sessions of super-admins who are not members (super-admins are allowed). → Task 3.2
+4. Removing the last `owner` of a tenant, or an auditor calling any mutating route, must be refused (403), including sessions of super-admins who are not members (super-admins are allowed). → Task 3.2
 5. A paused tenant: `/oauth/token` returns `400 {error:"invalid_request", error_description:"tenant paused"}`, introspection of its tokens returns `active:false`, JWKS still serves keys (resource servers must keep verifying old tokens until expiry). → Tasks 2.3, 2.4, 2.5
 
 ---
@@ -142,7 +142,7 @@ Done already: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `biome.json`,
 
 **Files:** create `packages/shared/{package.json,tsconfig.json,src/index.ts}`, `packages/db/{package.json,tsconfig.json,drizzle.config.ts,src/index.ts}`, `apps/api/{package.json,tsconfig.json,vitest.config.ts,src/index.ts}`, `apps/web/{package.json,tsconfig.json,vite.config.ts,index.html,src/main.tsx,tailwind.config.ts,postcss.config.js,src/globals.css}`.
 
-**Spec:** packages use `@handsal/*`, the same dependency versions (drop `@axiomhq/pino`, `sonner` stays optional), and the same scripts (`dev`, `build`, `typecheck`, `test`, `lint`, `format:check`; db: `generate`, `migrate`, `seed`). `apps/web/vite.config.ts` proxies `/api`, `/t`, `/health`, `/ready` to `http://localhost:3000`; no `allowedHosts`. `apps/api/vitest.config.ts` uses `globals` and `setupFiles: ./src/test/setup.ts`. `src/index.ts` files may be placeholders that export nothing, but every package must build.
+**Spec:** each package has scripts `dev`, `build`, `typecheck`, `test`, `lint`, `format:check` (db also `generate`, `migrate`, `seed`). `apps/web/vite.config.ts` proxies `/api`, `/t`, `/health`, `/ready` to `http://localhost:3000`; no `allowedHosts`. `apps/api/vitest.config.ts` uses `globals` and `setupFiles: ./src/test/setup.ts`. `src/index.ts` files may be placeholders that export nothing, but every package must build.
 
 - [ ] Create the files; run `pnpm install` (generates `pnpm-lock.yaml`).
 - [ ] Verify: `pnpm typecheck && pnpm check && pnpm build` pass; `docker build -t handsal:dev .` succeeds (the Dockerfile already references these paths).
@@ -170,7 +170,7 @@ Done already: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `biome.json`,
 
 **Files:** `packages/db/src/schema/{tenants,admin-users,tenant-members,applications,resources,scopes,application-grants,signing-keys,revoked-tokens,token-events,index}.ts`, `packages/db/src/relations.ts`, `packages/db/src/client.ts`, `packages/db/src/migrate.ts`, `packages/db/src/seed.ts`, `packages/db/drizzle/0000_*.sql` (generated), `packages/db/src/index.ts`.
 
-**Spec:** exactly the **Data model** table above, with pg enums named `tenant_status, tenant_role, application_kind, token_endpoint_auth_method, application_status, resource_kind, resource_status, agent_policy, signing_key_status, token_event_outcome`. `client.ts` and `migrate.ts` use a pool with `max 20` and `pool.on("error")` that logs and does not crash. `index.ts` exports `db, pool, runMigrations, schema tables, relations`. `seed.ts` (`tsx`, uses `DATABASE_URL`) creates: super-admin `admin@handsal.local / handsal-dev-password`, tenant `acme-payments`, resources `Payments API (https://api.acme.io/payments: payments:read, payments:write, payments:refund)`, `Invoices API (…/invoices: invoices:read, invoices:write, invoices:void)`, application `billing-service` granted `payments:read, invoices:write`; prints the client_id + secret once and writes nothing else to disk.
+**Spec:** exactly the **Data model** table above, with pg enums named `tenant_status, tenant_role, application_kind, token_endpoint_auth_method, application_status, resource_kind, resource_status, agent_policy, signing_key_status, token_event_outcome`. `client.ts` and `migrate.ts` use a `pool` with `max 20` and `pool.on("error")` that logs and does not crash. `index.ts` exports `db, pool, runMigrations, schema tables, relations`. `seed.ts` (`tsx`, uses `DATABASE_URL`) creates: super-admin `admin@handsal.local / handsal-dev-password`, tenant `acme-payments`, resources `Payments API (https://api.acme.io/payments: payments:read, payments:write, payments:refund)`, `Invoices API (…/invoices: invoices:read, invoices:write, invoices:void)`, application `billing-service` granted `payments:read, invoices:write`; prints the client_id + secret once and writes nothing else to disk.
 
 - [ ] Write schema; `pnpm db:generate` → inspect SQL for the partial unique index on `signing_keys (tenant_id) where status='active'` (add via `uniqueIndex(...).where(sql\`status = 'active'\`)`), all composite FKs, cascade rules.
 - [ ] `pnpm db:migrate` on the dev compose Postgres succeeds twice (idempotent).
@@ -181,9 +181,9 @@ Done already: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `biome.json`,
 
 **Files:** `apps/api/src/{env.ts,env.test.ts,index.ts,app.ts,app.test.ts,server.ts}`, `apps/api/src/middleware/{error-handler.ts,error-handler.test.ts,request-logger.ts,rate-limit.ts,rate-limit.test.ts,security-headers.ts}`, `apps/api/src/utils/{logger.ts,client-ip.ts,client-ip.test.ts,store.ts,security-logger.ts}`, `apps/api/src/test/{setup.ts,helpers.ts}`.
 
-**Spec:** `env.ts` schema: `NODE_ENV (development|test|production) default development`, `DATABASE_URL`, `PUBLIC_URL url`, `KEY_ENCRYPTION_SECRET 64 hex`, `ADMIN_API_KEY? min 32 (48 in prod)`, `BOOTSTRAP_ADMIN_EMAIL? email`, `BOOTSTRAP_ADMIN_PASSWORD? min 12`, `PORT default 3000`, `LOG_LEVEL default info`, `CORS_ORIGINS default http://localhost:5173`, `TRUST_PROXY`, `TRUST_PROXY_HOP_COUNT`, `ENABLE_ADMIN_PANEL default "true"`, `RATE_LIMIT_TOKEN_IP_MAX default 6000`, `RATE_LIMIT_TOKEN_CLIENT_MAX default 600`, `TOKEN_EVENTS_RETENTION_DAYS default 30`; production refinements from the Global Constraints. `app.ts`: request-id, pino request logger, security headers (API CSP `default-src 'none'` for `/api`, `/t`, `/health`, `/ready`; SPA CSP otherwise), CORS on `/api/*` only, `bodyLimit` 16 KB on `/t/*`, 512 KB on `/api/*`, `GET /health → {status:"ok", version}`, `GET /ready → 200 {status:"ok"} | 503 {status:"db_unavailable"}`, mount points `app.route("/t/:slug", oauthRoutes)` and `app.route("/api", managementRoutes)` (both may be empty `new Hono()` placeholders in this task), static SPA serving when `ENABLE_ADMIN_PANEL=true` and `NODE_ENV=production`, `app.onError(errorHandler)`. `error-handler.ts`: `class OAuthError(code, status, description)`, `class ApiError(status, code, description, details?)`, Zod errors → 400 `validation_error`, unknown → 500 `server_error` logged with requestId. `server.ts`: `runMigrations()` → `bootstrapAdmin()` (Task 3.1 provides; stub here) → `startJobs()` (stub) → `serve`; graceful shutdown on SIGTERM and SIGINT. `rate-limit.ts`: `rateLimit({ keyFn, max, windowMs, store? })` with `MemoryStore` default, `Retry-After` header, 429 OAuth body on `/t`, API body on `/api`.
+**Spec:** `env.ts` schema: `NODE_ENV (development|test|production) default development`, `DATABASE_URL`, `PUBLIC_URL url`, `KEY_ENCRYPTION_SECRET 64 hex`, `BOOTSTRAP_ADMIN_EMAIL? email`, `BOOTSTRAP_ADMIN_PASSWORD? min 12`, `PORT default 3000`, `LOG_LEVEL default info`, `CORS_ORIGINS default http://localhost:5173`, `TRUST_PROXY`, `TRUST_PROXY_HOP_COUNT`, `ENABLE_ADMIN_PANEL default "true"`, `RATE_LIMIT_TOKEN_IP_MAX default 600`, `RATE_LIMIT_TOKEN_CLIENT_MAX default 600`, `TOKEN_EVENTS_RETENTION_DAYS default 30`; production refinements from the Global Constraints. `app.ts`: request-id, pino request logger, security headers (API CSP `default-src 'none'` for `/api`, `/t`, `/health`, `/ready`; SPA CSP otherwise), CORS on `/api/*` only, `bodyLimit` 16 KB on `/t/*`, 512 KB on `/api/*`, `GET /health → {status:"ok", version}`, `GET /ready → 200 {status:"ok"} | 503 {status:"db_unavailable"}`, mount points `app.route("/t/:slug", oauthRoutes)` and `app.route("/api", managementRoutes)` (both may be empty `new Hono()` placeholders in this task), static SPA serving when `ENABLE_ADMIN_PANEL=true` and `NODE_ENV=production`, `app.onError(errorHandler)`. `error-handler.ts`: `class OAuthError(code, status, description)`, `class ApiError(status, code, description, details?)`, Zod errors → 400 `validation_error`, unknown → 500 `server_error` logged with requestId. `server.ts`: `runMigrations()` → `bootstrapAdmin()` (Task 3.1 provides; stub here) → `startJobs()` (stub) → `serve`; graceful shutdown on SIGTERM and SIGINT. `rate-limit.ts`: `rateLimit({ keyFn, max, windowMs, store? })` with `MemoryStore` default, `Retry-After` header, 429 OAuth body on `/t`, API body on `/api`.
 
-- [ ] Tests: `env.test.ts` (prod rejects placeholder secret, http PUBLIC_URL, 32-char ADMIN_API_KEY), `app.test.ts` (`/health` 200, `/ready` 503 when pool rejects, headers present, unknown route 404 JSON), `rate-limit.test.ts` (max+1 request → 429 with Retry-After), `error-handler.test.ts` (OAuthError body shape + `Cache-Control: no-store`).
+- [ ] Tests: `env.test.ts` (prod rejects placeholder secret, http PUBLIC_URL), `app.test.ts` (`/health` 200, `/ready` 503 when pool rejects, headers present, unknown route 404 JSON), `rate-limit.test.ts` (max+1 request → 429 with Retry-After), `error-handler.test.ts` (OAuthError body shape + `Cache-Control: no-store`).
 - [ ] Verify `pnpm --filter @handsal/api test && pnpm typecheck && pnpm check`.
 
 ---
@@ -247,7 +247,7 @@ Done already: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `biome.json`,
 
 **Files:** `apps/api/src/routes/oauth/{discovery.ts,jwks.ts}` (+tests), `apps/api/src/routes/oauth/index.ts` (wire all five routes).
 
-**Spec:** `GET /t/:slug/.well-known/openid-configuration` and `GET /t/:slug/.well-known/oauth-authorization-server` return `{ issuer, token_endpoint, introspection_endpoint (omit when disabled), revocation_endpoint, jwks_uri, grant_types_supported:["client_credentials"], token_endpoint_auth_methods_supported:["client_secret_basic","client_secret_post"], introspection_endpoint_auth_methods_supported: same, revocation_endpoint_auth_methods_supported: same, scopes_supported: all scope names of the tenant (sorted, unique), response_types_supported: [], id_token_signing_alg_values_supported: ["ES256"], token_endpoint_auth_signing_alg_values_supported: ["ES256"] }` with `Cache-Control: public, max-age=300`. `GET /t/:slug/.well-known/jwks.json` → `getJwks(tenant.id)` with `Cache-Control: public, max-age=300`. JWKS of a paused tenant still returns keys (Review Focus 5). Unknown slug → 404.
+**Spec:** `GET /t/:slug/.well-known/openid-configuration` and `GET /t/:slug/.well-known/oauth-authorization-server` return `{ issuer, token_endpoint, introspection_endpoint (omit when disabled), revocation_endpoint, jwks_uri, grant_types_supported:["client_credentials"], token_endpoint_auth_methods_supported:["client_secret_basic","client_secret_post"], introspection_endpoint_auth_methods_supported: same, revocation_endpoint_auth_methods_supported: same, response_types_supported: [], id_token_signing_alg_values_supported: ["ES256"], token_endpoint_auth_signing_alg_values_supported: ["ES256"] }` with `Cache-Control: public, max-age=300`. `GET /t/:slug/.well-known/jwks.json` → `getJwks(tenant.id)` with `Cache-Control: public, max-age=300`. JWKS of a paused tenant still returns keys (Review Focus 5). Unknown slug → 404.
 
 - [ ] Tests: URLs are built from `PUBLIC_URL` + slug; disabled introspection omits the field; JWKS has no private members (`d` absent); paused tenant JWKS 200.
 
@@ -255,19 +255,19 @@ Done already: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `biome.json`,
 
 ## Phase 3 — Management API  (3.1 first; then 3.2 ∥ 3.3 ∥ 3.4 ∥ 3.5)
 
-### Task 3.1 — Admin auth: login, session cookie, CSRF, ADMIN_API_KEY, bootstrap, role guards  (Opus)
+### Task 3.1 — Admin auth: login, session cookie, CSRF, bootstrap, role guards  (Opus)
 
 **Files:** `apps/api/src/services/{admin-user.service.ts,admin-user.service.test.ts,bootstrap.ts}`, `apps/api/src/middleware/{admin-auth.ts,admin-auth.test.ts,tenant-access.ts,tenant-access.test.ts}`, `apps/api/src/routes/management/{index.ts,auth.ts,auth.test.ts}`, `apps/api/src/test/helpers.ts` (`loginAs(app, email, password): Promise<{cookie, csrf}>`).
 
-**Spec:** HMAC-signed session cookie `handsal_session`, key = `deriveKey(KEY_ENCRYPTION_SECRET, "admin-session")`, 12 h TTL, `HttpOnly; Secure (prod); SameSite=Strict; Path=/`; CSRF token = HMAC of session id returned in the login body and required as `X-CSRF-Token` on `POST/PUT/PATCH/DELETE /api/*`. `adminAuth` middleware accepts **either** the session cookie or `Authorization: Bearer ${ADMIN_API_KEY}` (timing-safe compare; sets `c.var.actor = { kind:"api-key", isSuperAdmin:true }`). `requireTenantAccess(minRole: "auditor"|"admin"|"owner")` middleware for `/api/tenants/:tenantId/*`: super-admin passes; otherwise look up `tenant_members`; 404 when the tenant does not exist or the user is not a member (do not reveal existence), 403 when role is below `minRole`. `bootstrapAdmin()` creates the super-admin from `BOOTSTRAP_ADMIN_*` only when `admin_users` is empty, logs email (never the password). Login rate limit 5 / 15 min per IP; failed login returns 401 `invalid_credentials` regardless of which part was wrong; `last_login_at` updated.
+**Spec:** HMAC-signed session cookie `handsal_session`, key = `deriveKey(KEY_ENCRYPTION_SECRET, "admin-session")`, 12 h TTL, `HttpOnly; Secure (prod); SameSite=Strict; Path=/`; CSRF token = HMAC of session id returned in the login body and required as `X-CSRF-Token` on `POST/PUT/PATCH/DELETE /api/*`. `adminAuth` middleware accepts the session cookie only. `requireTenantAccess(minRole: "auditor"|"admin"|"owner")` middleware for `/api/tenants/:tenantId/*`: super-admin passes; otherwise look up `tenant_members`; 404 when the tenant does not exist or the user is not a member (do not reveal existence), 403 when role is below `minRole`. `bootstrapAdmin()` creates the super-admin from `BOOTSTRAP_ADMIN_*` only when `admin_users` is empty, logs email (never the password). Login rate limit 5 / 15 min per IP; failed login returns 401 `invalid_credentials` regardless of which part was wrong; `last_login_at` updated.
 
-- [ ] Tests: login/logout/me cycle; wrong password 401; tampered cookie 401; mutating call without CSRF header 403 `csrf_required`; API key passes as super-admin and ignores CSRF; `requireTenantAccess("admin")` → auditor 403, admin 200, non-member 404, super-admin 200 (Review Focus 4); bootstrap creates once and is a no-op when a user exists; 6th login attempt in window 429.
+- [ ] Tests: login/logout/me cycle; wrong password 401; tampered cookie 401; mutating call without CSRF header 403 `csrf_required`; `requireTenantAccess("admin")` → auditor 403, admin 200, non-member 404, super-admin 200 (Review Focus 4); bootstrap creates once and is a no-op when a user exists; 6th login attempt in window 429.
 
 ### Task 3.2 — Tenants + members routes  (Opus)
 
 **Files:** `apps/api/src/services/{tenant.service.ts,member.service.ts}` (+tests), `apps/api/src/routes/management/{tenants.ts,members.ts}` (+tests).
 
-**Spec:** the **Management API surface** rows for `/api/tenants…` and `…/members…`. `createTenant` runs in one transaction: insert tenant → `ensureActiveKey` → add creator as `owner` (unless actor is the API key). `GET /api/tenants` enriches with `appCount, resourceCount, tokens24h` (one grouped query, not N+1). `GET /api/tenants/:id` adds `issuer`, `discoveryUrl`, `jwksUrl`, `stats` (`getTokenStats`). `DELETE` requires owner and body `{confirmSlug}` equal to the slug. `pause`/`resume` toggle status; `revoke-all-tokens` → `revokeAllTenantTokens`. Members: `POST` with an unknown email creates an `admin_users` row with a generated 24-char temporary password returned once (`{member, temporaryPassword}`); `PATCH`/`DELETE` refuse to demote/remove the last `owner` (409 `last_owner`); a member cannot change their own role.
+**Spec:** the **Management API surface** rows for `/api/tenants…` and `…/members…`. `createTenant` runs in one transaction: insert tenant → `ensureActiveKey` → add creator as `owner`. `GET /api/tenants` enriches with `appCount, resourceCount, tokens24h` (one grouped query, not N+1). `GET /api/tenants/:id` adds `issuer`, `discoveryUrl`, `jwksUrl`, `stats` (`getTokenStats`). `DELETE` requires owner and body `{confirmSlug}` equal to the slug. `pause`/`resume` toggle status; `revoke-all-tokens` → `revokeAllTenantTokens`. Members: `POST` with an unknown email creates an `admin_users` row with a generated 24-char temporary password returned once (`{member, temporaryPassword}`); `PATCH`/`DELETE` refuse to demote/remove the last `owner` (409 `last_owner`); a member cannot change their own role.
 
 - [ ] Tests cover every rule above plus: auditor can `GET` but every mutation → 403; non-member → 404 on every route; delete cascades (count rows after).
 
@@ -347,18 +347,18 @@ Visual spec = `docs/design/<Board>.dc.html` (open the file, read the markup + th
 
 ### Task 5.2 — CI hardening  (Sonnet)
 
-- [ ] `.github/workflows/ci.yml` runs green on a PR (postgres service already configured). Pin action versions to SHAs (Renovate keeps them). `docker.yml` builds on `main` and `v*` tags → `ghcr.io/<owner>/handsal`; replace `OWNER` placeholder in `docker-compose.prod.yml` with the real GitHub org once known.
+- [ ] `.github/workflows/ci.yml` runs green on a PR (postgres service already configured). Pin action versions to SHAs (Renovate keeps them). `docker.yml` builds on `main` and `v*` tags → `ghcr.io/${{ github.repository }}`. `docker-compose.prod.yml` pulls `ghcr.io/wfalowski/handsal:latest`.
 
 ### Task 5.3 — Docs: README, deployment, integration guide  (Sonnet, then `pl-copywriter` is NOT needed — docs are English)
 
-- [ ] `README.md`: what Handsal is (M2M OAuth 2.0, tenants, ES256, introspection, single image), 5-minute quickstart with `docker-compose.prod.yml`, dev setup, env reference (table from `.env.example`), endpoint table, "no license yet" note.
+- [ ] `README.md`: what Handsal is (M2M OAuth 2.0, tenants, ES256, introspection, single image), 5-minute quickstart with `docker-compose.prod.yml`, dev setup, env reference (table from `.env.example`), endpoint table, Apache-2.0 note.
 - [ ] `docs/deployment.md`: reverse proxy + `TRUST_PROXY`, secrets generation, backups (pg_dump), upgrading (migrations on start), key rotation semantics, revocation caveat for JWT-verifying resource servers.
 - [ ] `docs/integration.md`: how a service obtains a token (curl + Node + Python snippets), how a resource server verifies (`jose` `createRemoteJWKSet` with the tenant JWKS URL, check `iss`, `aud`, `scope`), when to use introspection.
 - [ ] `CLAUDE.md` already exists — update commands/architecture if anything moved.
 
 ### Task 5.4 — End-to-end smoke script  (Sonnet)
 
-- [ ] `scripts/smoke.sh` (bash + curl + jq) against a running instance: login with API key → create tenant → resource + scope → application + grant → `POST /t/:slug/oauth/token` → decode and check `aud`/`scope` → introspect active → revoke → introspect inactive → discovery URLs resolve → exit 0. Wire into CI after `docker compose up` as a final job.
+- [ ] `scripts/smoke.sh` (bash + curl + jq) against a running instance: login as a super-admin → create tenant → resource + scope → application + grant → `POST /t/:slug/oauth/token` → decode and check `aud`/`scope` → introspect active → revoke → introspect inactive → discovery URLs resolve → exit 0. Wire into CI after `docker compose up` as a final job.
 
 ---
 
@@ -376,12 +376,12 @@ Each task gets its own migration (`00NN_*.sql`) and a short design note in `docs
 ### Non-agent backlog (unscheduled)
 
 Opaque tokens (introspection-only format) · custom issuer domains per tenant · admin SSO (OIDC) · password reset · Redis store for rate limits (multi-replica) · CSV export of token events · "Introspect a token" admin tool · p95 latency tile · audit log of admin actions · enterprise license + feature flags.
-approval-rules editor in the admin UI · unique index on `approval_rules (tenant_id, scope_id, condition)` · resolve-and-pin outbound URLs (webhook/JWKS) against DNS rebinding · redeem guardrails: pending cap is check-then-insert (can overshoot under concurrency) · admin password reset / "reset temporary password" route (re-inviting an existing user returns no password) · `CREATE INDEX CONCURRENTLY` migrations once tables grow · `unsupported_token_type` for unknown `token_type_hint` on revoke
+approval-rules editor in the admin UI · unique index on `approval_rules (tenant_id, scope_id, condition)` · redeem guardrails: pending cap is check-then-insert (can overshoot under concurrency) · admin password reset / "reset temporary password" route (re-inviting an existing user returns no password) · `CREATE INDEX CONCURRENTLY` migrations once tables grow · `unsupported_token_type` for unknown `token_type_hint` on revoke
 
 ---
 
 ## Self-review log
 
-- Spec coverage: artboards 01–07 → Phases 1–5 (exclusions listed under MVP scope); 08–09 → Phase 6. User requirements: Hono ✓, single Docker image + prod compose with PostgreSQL ✓ (Phase 0 files, Task 5.1), reusable/generic ✓ (Global Constraints), MVP without agents but agent-ready ✓ (kind/agent_policy columns, Phase 6 plan), M2M only ✓, open source without license ✓.
+- Spec coverage: artboards 01–07 → Phases 1–5 (exclusions listed under MVP scope); 08–09 → Phase 6. User requirements: Hono ✓, single Docker image + prod compose with PostgreSQL ✓ (Phase 0 files, Task 5.1), reusable/generic ✓ (Global Constraints), MVP without agents but agent-ready ✓ (kind/agent_policy columns, Phase 6 plan), M2M only ✓, open source under Apache-2.0 ✓.
 - Type consistency: `GrantView`, `getGrantedScopesForAudience`, `recordTokenEvent`, `rotateKey`, `getJwks`, `authenticateClient`, `requireTenantAccess` are named identically in every task that uses them.
 - Review Focus items 1–5 each have a test in the task they point to.

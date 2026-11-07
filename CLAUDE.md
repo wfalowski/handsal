@@ -13,7 +13,7 @@ Self-hostable authorization server for services (and later AI agents) talking to
 - `docker build -t handsal .` ; `docker compose -f docker-compose.prod.yml up -d`
 
 ## Architecture
-- `apps/api` — Hono (Node 24). `src/routes/oauth/*` mounted at `/t/:slug` (token, introspect, revoke, discovery, jwks); `src/routes/management/*` at `/api` (session cookie or `ADMIN_API_KEY`); `src/services/*` business logic (first arg is always `tenantId`); `src/jobs/*` interval jobs (key rotation/retirement, revoked-token purge, token-event retention); `src/utils/*` crypto/jwt/keys; serves `apps/web/dist` from `./public` in production.
+- `apps/api` — Hono (Node 24). `src/routes/oauth/*` mounted at `/t/:slug` (token, introspect, revoke, discovery, jwks); `src/routes/management/*` at `/api` (session cookie); `src/services/*` business logic (first arg is always `tenantId`); `src/jobs/*` interval jobs (key rotation/retirement, revoked-token purge, token-event retention); `src/utils/*` crypto/jwt/keys; serves `apps/web/dist` from `./public` in production.
 - `apps/web` — React 19 + TanStack Router/Query + Tailwind admin UI.
 - `packages/db` — Drizzle schema + migrations (`drizzle/*.sql`, run at startup), seed.
 - `packages/shared` — Zod schemas, constants, DTO types shared by api + web.
@@ -25,4 +25,4 @@ Self-hostable authorization server for services (and later AI agents) talking to
 - Secrets Argon2id-hashed; signing private keys AES-256-GCM encrypted with `KEY_ENCRYPTION_SECRET`; nothing secret in `.env.example` that passes in production.
 - Schema changes: edit `packages/db/src/schema`, `pnpm db:generate`, never hand-edit SQL.
 - Integration tests hit the real Postgres; no Drizzle mocks.
-- No vendor-specific code. This is a generic open-source product. No LICENSE yet (intentional).
+- No vendor-specific code. This is a generic open-source product, licensed under Apache-2.0 (`LICENSE`).

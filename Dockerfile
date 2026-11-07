@@ -37,10 +37,10 @@ RUN sed -i 's|"./src/index.ts"|"./dist/index.js"|g' packages/db/package.json
 # ── Stage 4: Production ─────────────────────────────────────
 FROM base AS production
 
-# OCI metadata. No license has been chosen yet, hence UNLICENSED.
-LABEL org.opencontainers.image.source="https://github.com/OWNER/handsal" \
+# OCI metadata.
+LABEL org.opencontainers.image.source="https://github.com/wfalowski/handsal" \
       org.opencontainers.image.description="Handsal: multi-tenant M2M OAuth 2.0 authorization server" \
-      org.opencontainers.image.licenses="UNLICENSED"
+      org.opencontainers.image.licenses="Apache-2.0"
 
 ENV NODE_ENV=production
 ENV NODE_OPTIONS=--enable-source-maps

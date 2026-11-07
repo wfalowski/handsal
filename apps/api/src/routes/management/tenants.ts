@@ -20,17 +20,13 @@ export const tenantRoutes = new Hono<AdminEnv>();
 
 tenantRoutes.get("/", async (c) => {
   const actor = c.var.actor;
-  return c.json(
-    await listTenantsWithStats(
-      actor.kind === "user" && !actor.isSuperAdmin ? actor.userId : undefined,
-    ),
-  );
+  return c.json(await listTenantsWithStats(actor.isSuperAdmin ? undefined : actor.userId));
 });
 
 tenantRoutes.post("/", async (c) => {
   const input = tenantCreateSchema.parse(await c.req.json().catch(() => ({})));
   const actor = c.var.actor;
-  return c.json(await createTenant(input, actor.kind === "user" ? actor.userId : undefined), 201);
+  return c.json(await createTenant(input, actor.userId), 201);
 });
 
 tenantRoutes.get("/:tenantId", requireTenantAccess("auditor"), async (c) => {

@@ -205,6 +205,8 @@ def verify(token: str, required_scope: str | None = None) -> dict:
 
 Respond `401` for a missing or invalid token and `403` for a valid token without the scope.
 
+`@handsal/sdk` (`packages/sdk`) does this check for Hono, Express, and Next.js. See [sdk.md](sdk.md).
+
 ## 3. Introspection: when local verification is not enough
 
 A JWT verified locally stays acceptable until `exp`, even after the token was revoked, the application was disabled, "revoke all" was used, or the tenant was paused. For operations where that window is unacceptable (payments, deletions, admin actions), ask Handsal: `POST <issuer>/oauth/introspect` with the token, authenticated as any application of the same tenant (Basic or body, per its registered method). Your resource server therefore needs its own application and secret.
@@ -238,12 +240,11 @@ The token's owner can revoke it with `POST <issuer>/oauth/revoke` (`token=<jwt>`
   "grant_types_supported": ["client_credentials"],
   "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "private_key_jwt"],
   "token_endpoint_auth_signing_alg_values_supported": ["ES256"],
-  "scopes_supported": ["orders:read", "orders:write"],
   "id_token_signing_alg_values_supported": ["ES256"]
 }
 ```
 
-`introspection_endpoint` is omitted when introspection is disabled for the tenant. Read `token_endpoint` and `jwks_uri` from this document at startup instead of building the paths by hand; validate that `issuer` equals the value you configured.
+`introspection_endpoint` is omitted when introspection is disabled for the tenant. The document does not list the tenant's scopes. Read `token_endpoint` and `jwks_uri` from this document at startup instead of building the paths by hand; validate that `issuer` equals the value you configured.
 
 ## 5. Authenticating with private_key_jwt
 
@@ -256,10 +257,10 @@ Instead of a shared secret, the application proves its identity with a short-liv
    openssl pkey -in key.pem -pubout -out pub.pem   # SPKI PEM: "-----BEGIN PUBLIC KEY-----"
    ```
 
-2. **Register the public key**, in the UI (application detail) or through the management API (`admin` role; the `kid` is your choice, up to 128 characters of `A-Za-z0-9._:-`, unique per application):
+2. **Register the public key**, in the UI (application detail) or through the management API (`admin` role; the `kid` is your choice, up to 128 characters of `A-Za-z0-9._:-`, unique per application). Management calls send the `handsal_session` cookie and `X-CSRF-Token` returned by `POST /api/auth/login`.
 
    ```bash
-   curl -s -X POST -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+   curl -s -X POST -H "Cookie: handsal_session=$SESSION" -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json" \
      -d "$(jq -n --arg pem "$(cat pub.pem)" '{kid:"key-2026-11", publicKeyPem:$pem}')" \
      https://auth.example.com/api/tenants/$TENANT_ID/applications/$APP_ID/keys
    ```
@@ -382,7 +383,7 @@ curl -s https://auth.example.com/t/acme/oauth/token \
 A rule lets a known-safe pattern skip the human. It is tied to one `approval` scope and has an optional condition (all keys ANDed): `application_ids`, `task_id_prefix`, `max_scopes`. `task_id` is asserted by the agent and is not an authorization boundary: a rule keyed on `task_id_prefix` alone is rejected, so pair it with `application_ids` (`400 invalid_rule_condition`). A rule can only be created on a scope whose `agent_policy` is `approval` (`400 scope_not_approval`). A request is auto-approved only when every `approval` scope in it is covered by a matching rule. Rules are managed through the API only:
 
 ```bash
-curl -s -X POST -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+curl -s -X POST -H "Cookie: handsal_session=$SESSION" -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json" \
   -d '{"scopeId":"'$SCOPE_ID'","condition":{"application_ids":["'$APP_ID'"],"task_id_prefix":"refund-","max_scopes":2}}' \
   https://auth.example.com/api/tenants/$TENANT_ID/approval-rules
 ```
@@ -443,7 +444,7 @@ An empty list (the default) disables exchange for the application. The applicati
 **External IdP.** To accept user tokens, set the tenant's `externalIdp` (Settings, or `PATCH /api/tenants/$TENANT_ID`):
 
 ```bash
-curl -s -X PATCH -H "Authorization: Bearer $ADMIN_API_KEY" -H "Content-Type: application/json" \
+curl -s -X PATCH -H "Cookie: handsal_session=$SESSION" -H "X-CSRF-Token: $CSRF" -H "Content-Type: application/json" \
   -d '{"externalIdp":{"issuer":"https://login.acme.example/","jwksUri":"https://login.acme.example/.well-known/jwks.json","audience":"https://auth.example.com/t/acme"}}' \
   https://auth.example.com/api/tenants/$TENANT_ID
 ```

@@ -1,0 +1,10 @@
+---
+import { Content, frontmatter } from "../../../../../docs/overview.md";
+import Doc from "../../layouts/Doc.astro";
+
+const meta = frontmatter as { title: string; description: string };
+---
+
+<Doc locale="en" title={meta.title} description={meta.description} path="/docs">
+  <Content />
+</Doc>
