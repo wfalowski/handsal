@@ -9,7 +9,17 @@ import {
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { decodeJwt, decodeProtectedHeader } from "jose";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+// No socket in app.request. Throw unless a test installs a trusted peer, so
+// forwarding headers stay ignored the way they are for a direct caller.
+const { mockGetConnInfo } = vi.hoisted(() => ({
+  mockGetConnInfo: vi.fn(() => {
+    throw new Error("no conninfo");
+  }),
+}));
+vi.mock("@hono/node-server/conninfo", () => ({ getConnInfo: mockGetConnInfo }));
+
 import { type AppEnv, createApp } from "../../app.js";
 import { env } from "../../env.js";
 import { errorHandler } from "../../middleware/error-handler.js";
@@ -419,6 +429,7 @@ describe("POST /t/:slug/oauth/token", () => {
     // The same client_id from another source IP is not locked out by the first source.
     const prevTrustProxy = env.TRUST_PROXY;
     env.TRUST_PROXY = "true";
+    mockGetConnInfo.mockReturnValue({ remote: { address: "127.0.0.1" } });
     try {
       const fromA = { ...auth, "X-Forwarded-For": "203.0.113.1" };
       const fromB = { ...auth, "X-Forwarded-For": "203.0.113.2" };
@@ -429,6 +440,9 @@ describe("POST /t/:slug/oauth/token", () => {
       expect((await formRequest(limited, tokenUrl(tenant.slug), fields, fromB)).status).toBe(200);
     } finally {
       env.TRUST_PROXY = prevTrustProxy;
+      mockGetConnInfo.mockImplementation(() => {
+        throw new Error("no conninfo");
+      });
     }
   });
 });
@@ -739,7 +753,10 @@ describe("approval grant", () => {
     const { approval_id } = await (await s.request({ scope: "payments:write" })).json();
     await approve(approval_id);
     const results = await Promise.all([s.poll(approval_id), s.poll(approval_id)]);
-    expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+    const statuses = results.map((r) => r.status).sort();
+    // The loser is invalid_grant, or 503 when the per-source hash lane is already busy.
+    expect(statuses[0]).toBe(200);
+    expect([400, 503]).toContain(statuses[1]);
     const issued = (await events()).filter((e) => e.outcome === "issued");
     expect(issued).toHaveLength(1);
   });
@@ -898,13 +915,15 @@ describe("token exchange grant", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     const body = await res.json();
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       access_token: expect.any(String),
       issued_token_type: ACCESS_TOKEN_TYPE,
       token_type: "Bearer",
-      expires_in: 3600,
       scope: "payments:read",
     });
+    // Capped by the subject token, which is a second or two under its original hour.
+    expect(body.expires_in).toBeLessThanOrEqual(3600);
+    expect(body.expires_in).toBeGreaterThan(3500);
     expect(decodeJwt(body.access_token)).toMatchObject({
       sub: s.application.clientId,
       act: { sub: s.agent.clientId },

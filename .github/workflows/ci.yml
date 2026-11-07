@@ -64,7 +64,6 @@ jobs:
             echo "NODE_ENV=production"
             echo "PUBLIC_URL=https://ci.example.test"
             echo "KEY_ENCRYPTION_SECRET=$(openssl rand -hex 32)"
-            echo "ADMIN_API_KEY=$(openssl rand -hex 32)"
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
             echo "BOOTSTRAP_ADMIN_EMAIL=ci@example.test"
             echo "BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)"
@@ -82,7 +81,8 @@ jobs:
           exit 1
       - name: Smoke test
         run: |
-          ADMIN_API_KEY="$(grep '^ADMIN_API_KEY=' .env | cut -d= -f2)" \
+          SMOKE_ADMIN_EMAIL=ci@example.test \
+          SMOKE_ADMIN_PASSWORD="$(grep '^BOOTSTRAP_ADMIN_PASSWORD=' .env | cut -d= -f2)" \
           HANDSAL_URL=http://localhost:3000 PUBLIC_URL=https://ci.example.test bash scripts/smoke.sh
       - name: Logs and teardown
         if: always()
