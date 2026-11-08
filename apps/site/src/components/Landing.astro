@@ -74,6 +74,31 @@ const here = homePath(locale);
       </div>
     </section>
 
+    <section class="band" id="why" aria-labelledby="why-title">
+      <div class="wrap">
+        <div class="why-head">
+          <div>
+            <h2 id="why-title">{copy.whyTitle}</h2>
+            <p class="lead">{copy.whyLead}</p>
+          </div>
+          <div>
+            <p class="why-word" lang="non">{copy.whyWord}</p>
+            <p class="why-gloss">{copy.whyGloss}</p>
+          </div>
+        </div>
+        <ul class="facts">
+          {
+            copy.whyNotes.map((note) => (
+              <li>
+                <h3>{note.title}</h3>
+                <p>{note.body}</p>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </section>
+
     <section class="band" id="shape" aria-labelledby="shape-title">
       <div class="wrap">
         <h2 id="shape-title">{copy.shapeTitle}</h2>

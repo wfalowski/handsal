@@ -13,6 +13,7 @@ const en = {
   language: "Language",
   page: "Page",
   skip: "Skip to content",
+  whyNav: "Why",
   how: "How it works",
   runNav: "Run",
   docs: "Docs",
@@ -47,6 +48,25 @@ const en = {
       scene: "acme / globex",
       title: "Each team has its own issuer.",
       body: "One server, many tenants. Each has its own keys, applications, and audiences. A token from one tenant does not verify against another.",
+    },
+  ],
+  whyTitle: "Why Handsal.",
+  whyLead:
+    "Handsal is an Old Norse legal word. It is the joining of hands that made a bargain binding. The two parties said the terms aloud, and at least two witnesses saw and heard them. Before that, the deal was only talk.",
+  whyWord: "handsal",
+  whyGloss: "A neuter noun. Hand, and sal from selja, to hand something over.",
+  whyNotes: [
+    {
+      title: "The clasp was the contract",
+      body: "In the Icelandic Grágás and the old Norwegian laws, a sale of land, a pledge, or taking charge of someone else's property was finished by handsal. A broken handsal owed compensation.",
+    },
+    {
+      title: "Spoken, and witnessed",
+      body: "The parties, or a person they named, spoke a set formula. Two witnesses had to see the hands and hear the words. Some bargains were also announced at the assembly.",
+    },
+    {
+      title: "A witness, for machines",
+      body: "One side asks and the other answers. The token is the witness: one audience, only the scopes that were granted, and an expiry. English kept the word as handsel, the payment that seals a bargain.",
     },
   ],
   tokenCaption: "A token for tenant acme.",
@@ -113,6 +133,7 @@ const pl: typeof en = {
   language: "Język",
   page: "Strona",
   skip: "Przejdź do treści",
+  whyNav: "Dlaczego",
   how: "Jak to działa",
   runNav: "Uruchom",
   docs: "Dokumentacja",
@@ -147,6 +168,25 @@ const pl: typeof en = {
       scene: "acme / globex",
       title: "Każdy zespół ma swój issuer.",
       body: "Jeden serwer, wielu tenantów. Każdy ma własne klucze, aplikacje i audience. Token jednego tenanta nie przechodzi u drugiego.",
+    },
+  ],
+  whyTitle: "Dlaczego Handsal.",
+  whyLead:
+    "Handsal to staronordyckie słowo prawne. To złożenie dłoni, które czyniło umowę wiążącą. Strony wypowiadały warunki na głos, a co najmniej dwóch świadków widziało i słyszało. Wcześniej układ był tylko rozmową.",
+  whyWord: "handsal",
+  whyGloss: "Rzeczownik nijaki. Hand, dłoń, i sal od selja, przekazać coś komuś.",
+  whyNotes: [
+    {
+      title: "Uścisk był umową",
+      body: "W islandzkiej Grágás i w dawnym prawie norweskim sprzedaż ziemi, poręczenie albo oddanie cudzego mienia w opiekę kończyło się przez handsal. Zerwany handsal pociągał odszkodowanie.",
+    },
+    {
+      title: "Wypowiedziany i zaświadczony",
+      body: "Strony albo osoba, którą wskazały, mówiły ustaloną formułę. Dwóch świadków musiało widzieć dłonie i słyszeć słowa. Niektóre umowy ogłaszano też na wiecu.",
+    },
+    {
+      title: "Świadek, dla maszyn",
+      body: "Jedna strona prosi, druga odpowiada. Token jest świadkiem: jeden odbiorca, tylko przyznane zakresy i termin wygaśnięcia. Angielski zachował to słowo jako handsel, wpłatę, która pieczętuje układ.",
     },
   ],
   tokenCaption: "Token tenanta acme.",

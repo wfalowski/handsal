@@ -380,6 +380,35 @@ h2 {
   color: var(--accent);
 }
 
+.why-head {
+  display: grid;
+  gap: 2.25rem;
+  align-items: end;
+}
+
+#why h2 {
+  max-width: 12ch;
+}
+
+.why-word {
+  margin: 0;
+  font-family: "Space Grotesk", Inter, sans-serif;
+  font-weight: 500;
+  font-size: clamp(3.4rem, 8vw, 5.4rem);
+  letter-spacing: -0.055em;
+  line-height: 0.88;
+}
+
+.why-gloss {
+  margin-top: 0.85rem;
+  max-width: 18rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--accent);
+  text-wrap: pretty;
+}
+
 #run .column p {
   margin-top: 1.35rem;
 }
@@ -691,6 +720,11 @@ code {
 @media (min-width: 800px) {
   .wrap {
     width: min(1120px, calc(100% - 5rem));
+  }
+
+  .why-head {
+    grid-template-columns: minmax(0, 1.35fr) minmax(16rem, 0.7fr);
+    column-gap: 3rem;
   }
 
   .facts,
