@@ -181,7 +181,7 @@ Two optional build-time variables, both public:
 | `SITE_GITHUB_URL` | Repository linked as Source and GitHub. Defaults to `https://github.com/wfalowski/handsal`. No trailing-slash requirement. |
 | `SITE_URL` | Canonical URL of the page, for example `https://handsal.dev`. |
 
-The GitHub Actions workflow `.github/workflows/pages.yml` publishes `apps/site/dist` to Cloudflare Pages on a push to `main` (and when run by hand). It sets `SITE_GITHUB_URL` from `github.repository`. It deploys only when the repository variable `CLOUDFLARE_ACCOUNT_ID` is set, so a fresh clone does not fail the workflow.
+The GitHub Actions workflow `.github/workflows/pages.yml` publishes `apps/site/dist` to Cloudflare Pages on a push to `main` (and when run by hand). It sets `SITE_GITHUB_URL` from `github.repository`. It deploys only when `CLOUDFLARE_ACCOUNT_ID` is set, so a fresh clone does not fail the workflow.
 
 Before the first deploy, create the Pages project once (production branch `main`):
 
@@ -191,7 +191,7 @@ npx wrangler pages project create handsal --production-branch main
 
 Then in the GitHub repository:
 
-- Variable `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account id. This is what turns deploys on.
+- Secret `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account id. A repository variable of the same name works too. This is what turns deploys on.
 - Secret `CLOUDFLARE_API_TOKEN` — a token with the Cloudflare Pages edit permission.
 - Variable `SITE_URL` — optional canonical origin.
 
