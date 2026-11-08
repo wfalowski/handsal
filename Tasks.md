@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:subagent-driven-development` (one fresh `developer` agent per task, `code-reviewer` after each behaviour-changing task, `verifier` on the combined result). Each task below is a self-contained brief: copy it verbatim into the agent prompt together with the **Global Constraints** and **Conventions** sections. Steps use `- [ ]` for tracking.
 
-**Status (2026-11-06):** Phases 0–6 implemented and merged to `main`: all 23 MVP tasks plus Phase 6 (6.1–6.6, design note `docs/agents.md`, migrations 0002–0006); code reviews for Phases 1–4 and 6.1–6.5 applied. Remaining work is the backlog below.
+**Status (2026-11-06):** Phases 0–6 implemented and merged to `main`: all 23 MVP tasks plus Phase 6 (6.1–6.6, migrations 0002–0006); code reviews for Phases 1–4 and 6.1–6.5 applied. Remaining work is the backlog below.
 
 **Goal:** An open-source, self-hostable, multi-tenant machine-to-machine OAuth 2.0 authorization server (client-credentials grant, ES256 JWTs, introspection, revocation, JWKS, per-tenant issuers) with an admin UI, shipped as **one Docker image** plus a production `docker-compose` with PostgreSQL.
 
@@ -362,9 +362,9 @@ Visual spec: Inter, Space Grotesk and JetBrains Mono, accent `#3B5BDB`, and the 
 
 ---
 
-## Phase 6 — Post-MVP: AI agents (artboards 08–09) — DONE (status: all six tasks merged; deviations listed in `docs/agents.md` → Implementation deviations; auto-approve rules are API-only, no UI)
+## Phase 6 — Post-MVP: AI agents (artboards 08–09) — DONE (status: all six tasks merged; auto-approve rules are API-only, no UI)
 
-Each task gets its own migration (`00NN_*.sql`) and a short design note in `docs/agents.md` before implementation (`deep-reasoner` writes the note; `developer` Opus implements).
+Each task gets its own migration (`00NN_*.sql`).
 
 - **6.1 `private_key_jwt` (RFC 7523)** — table `application_keys (id, tenant_id, application_id, kid, alg 'ES256', public_key_pem/jwk, fingerprint_sha256, status active|retiring, retires_at)`; token endpoint accepts `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer` + `client_assertion` (`iss=sub=client_id`, `aud=token endpoint`, `exp ≤ 5 min`, `jti` replay cache); management routes + "Registered public keys" UI from artboard 08. Enables `token_endpoint_auth_method = private_key_jwt`.
 - **6.2 Agent application kind + guardrails** — allow `kind:"agent"`; columns on `applications`: `agent_runtime varchar`, `operator_email`, `allowed_cidrs text[]`, `max_scopes_per_token int`, `token_budget_per_hour int`; TTL options 1/5/15 min for agents; token service enforces: scope count ≤ max, hourly budget (count `token_events` issued in the last hour), source IP ∈ `allowed_cidrs`; "AI agents" filter + Type column on artboard 03; Agent detail page sections Credentials / Runtime binding / Guardrails / Scope ceiling (artboard 08).
