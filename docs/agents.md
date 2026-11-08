@@ -713,7 +713,7 @@ Integration, real Postgres, each agent on its own `TEST_DATABASE_URL` (db name m
 - Scope is computed per the agent's `delegation_scope_mode`: `intersection` (default) or `agent_only`.
 - TTL follows the existing precedence (`application ?? resource ?? tenant`). No special rule; an agent configured at 300 s reproduces the artboard's "ES256 · 300 s".
 - An exchange that resolves to an `approval` scope is **refused** with `invalid_scope`, not queued. Approving minutes later would mint a delegated token whose subject credential can no longer be verified, which would silently defeat revocation of the subject token.
-- **The artboard's claims preview is RFC-inverted.** `Agent.dc.html` shows `"sub": "svc_agent_44f1"` with `"act": {"sub": "user_9f2d"}`. RFC 8693 §4.1 makes `act` the *acting* party, so the implementation and the preview UI must both show `sub` = the subject and `act.sub` = the agent.
+- **The claims preview was RFC-inverted.** It showed `"sub": "svc_agent_44f1"` with `"act": {"sub": "user_9f2d"}`. RFC 8693 §4.1 makes `act` the *acting* party, so the implementation and the preview UI must both show `sub` = the subject and `act.sub` = the agent.
 
 ### Schema delta
 

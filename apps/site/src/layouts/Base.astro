@@ -34,10 +34,13 @@ function absolute(pathname: string): string {
 }
 
 const canonical = siteUrl && !robots ? absolute(current) : "";
+/** Guides without a Polish page. The switcher goes to the Polish docs index. */
+const translated = path === "/" || path === "/docs" || path === "/docs/sdk";
 const languages = [
   { locale: "en" as const, href: localePath("en", path), label: "English" },
-  { locale: "pl" as const, href: localePath("pl", path), label: "Polski" },
+  { locale: "pl" as const, href: translated ? localePath("pl", path) : "/pl/docs", label: "Polski" },
 ];
+const alternates = translated ? languages : languages.filter((language) => language.locale === "en");
 ---
 
 <!doctype html>
@@ -52,7 +55,7 @@ const languages = [
     {canonical && <link rel="canonical" href={canonical} />}
     {
       !robots &&
-        languages.map((language) => (
+        alternates.map((language) => (
           <link rel="alternate" hreflang={language.locale} href={absolute(language.href)} />
         ))
     }
@@ -135,7 +138,7 @@ const languages = [
             <a href={githubUrl}>GitHub</a>
           </p>
         </div>
-        <a href={`${githubUrl}/blob/main/docs/integration.md`}>{copy.integration}</a>
+        <a href="/docs/integration">{copy.integration}</a>
       </div>
     </footer>
   </body>

@@ -9,6 +9,9 @@ on:
       - "docs/overview.pl.md"
       - "docs/sdk.md"
       - "docs/sdk.pl.md"
+      - "docs/integration.md"
+      - "docs/deployment.md"
+      - "docs/api.md"
       - ".github/workflows/pages.yml"
       - "pnpm-lock.yaml"
   pull_request:
@@ -18,6 +21,9 @@ on:
       - "docs/overview.pl.md"
       - "docs/sdk.md"
       - "docs/sdk.pl.md"
+      - "docs/integration.md"
+      - "docs/deployment.md"
+      - "docs/api.md"
       - ".github/workflows/pages.yml"
       - "pnpm-lock.yaml"
   workflow_dispatch:

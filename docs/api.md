@@ -1,3 +1,8 @@
+---
+title: Management API
+description: OAuth endpoints and the session-cookie management API.
+---
+
 # API reference
 
 Two surfaces: the OAuth endpoints under `/t/:slug` (for services and resource servers) and the management API under `/api` (for the admin UI and automation). `<issuer>` below is `<PUBLIC_URL>/t/<slug>`.

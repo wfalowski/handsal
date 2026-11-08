@@ -19,7 +19,12 @@ export function TopBar({ title }: { title: string }) {
         <span className="font-medium">{title}</span>
       </div>
       <div className="flex items-center gap-3">
-        <a href="/docs" className="inline-flex min-h-11 items-center text-[13px] text-muted">
+        <a
+          href="https://github.com/wfalowski/handsal/blob/main/docs/overview.md"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex min-h-11 items-center text-[13px] text-muted"
+        >
           Docs
         </a>
         <button

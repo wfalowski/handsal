@@ -17,7 +17,7 @@ The check is local. The package fetches the tenant's public keys, then verifies 
 
 A missing or invalid token is `401` with `WWW-Authenticate: Bearer`. A valid token without the scope is `403` with `insufficient_scope`. The body is `{ "error": "invalid_token" }` or `{ "error": "insufficient_scope" }`. The response does not say whether the token was expired, unsigned, or signed by the wrong key.
 
-A token stays valid until `exp` after a revoke, a disabled application, or a paused tenant. For a payment or a deletion, introspect as well. This package does not introspect: that call needs the resource server's own client secret, and most routes should not pay for it. The [integration guide](https://github.com/wfalowski/handsal/blob/main/docs/integration.md#3-introspection-when-local-verification-is-not-enough) has the request.
+A token stays valid until `exp` after a revoke, a disabled application, or a paused tenant. For a payment or a deletion, introspect as well. This package does not introspect: that call needs the resource server's own client secret, and most routes should not pay for it. The [integration guide](integration.md#3-introspection-when-local-verification-is-not-enough) has the request.
 
 If the JWKS document cannot be fetched, the request fails. It is not reported as a bad token.
 
@@ -148,4 +148,4 @@ try {
 
 ## What this does not do
 
-It does not request tokens. A caller still posts to `<issuer>/oauth/token`. It does not call introspection, and it does not revoke tokens. Both are in the [integration guide](https://github.com/wfalowski/handsal/blob/main/docs/integration.md).
+It does not request tokens. A caller still posts to `<issuer>/oauth/token`. It does not call introspection, and it does not revoke tokens. Both are in the [integration guide](integration.md).

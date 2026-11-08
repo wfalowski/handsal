@@ -17,7 +17,7 @@ Sprawdzenie jest lokalne. Pakiet pobiera klucze publiczne tenanta i weryfikuje k
 
 Brak tokena albo zły token to `401` z `WWW-Authenticate: Bearer`. Poprawny token bez zakresu to `403` z `insufficient_scope`. Treść to `{ "error": "invalid_token" }` albo `{ "error": "insufficient_scope" }`. Odpowiedź nie mówi, czy token wygasł, był niepodpisany, czy podpisał go zły klucz.
 
-Po unieważnieniu, wyłączeniu aplikacji albo wstrzymaniu tenanta token zostaje ważny do `exp`. Przy płatności albo usunięciu dopytaj jeszcze introspekcją. Ten pakiet jej nie woła: takie wywołanie potrzebuje własnego sekretu serwera zasobów i większość ścieżek nie powinna za nie płacić. Prośba jest w [przewodniku integracji](https://github.com/wfalowski/handsal/blob/main/docs/integration.md#3-introspection-when-local-verification-is-not-enough).
+Po unieważnieniu, wyłączeniu aplikacji albo wstrzymaniu tenanta token zostaje ważny do `exp`. Przy płatności albo usunięciu dopytaj jeszcze introspekcją. Ten pakiet jej nie woła: takie wywołanie potrzebuje własnego sekretu serwera zasobów i większość ścieżek nie powinna za nie płacić. Prośba jest w [przewodniku integracji](integration.md#3-introspection-when-local-verification-is-not-enough).
 
 Gdy dokumentu JWKS nie da się pobrać, żądanie kończy się błędem. Nie jest zgłaszane jako zły token.
 
@@ -148,4 +148,4 @@ try {
 
 ## Czego ten pakiet nie robi
 
-Nie prosi o tokeny. Wołający nadal wysyła POST na `<issuer>/oauth/token`. Nie woła introspekcji i nie unieważnia tokenów. Jedno i drugie jest w [przewodniku integracji](https://github.com/wfalowski/handsal/blob/main/docs/integration.md).
+Nie prosi o tokeny. Wołający nadal wysyła POST na `<issuer>/oauth/token`. Nie woła introspekcji i nie unieważnia tokenów. Jedno i drugie jest w [przewodniku integracji](integration.md).

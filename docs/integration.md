@@ -1,3 +1,8 @@
+---
+title: Integration
+description: Request a token, verify it, and use private keys, agents, and delegation.
+---
+
 # Integration guide
 
 Two roles are involved. A **service** (client) obtains an access token from Handsal and sends it to a **resource server**, which verifies it. In the examples:

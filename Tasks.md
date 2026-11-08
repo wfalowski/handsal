@@ -10,7 +10,7 @@
 
 **Tech Stack:** TypeScript 5.9 (strict, ESM), Hono 4, `@hono/node-server`, jose 6, drizzle-orm 0.45 + pg 8, argon2, zod 4, pino, React 19, TanStack Router/Query 5, Tailwind 3, Vite 6, Vitest 4, Biome 2, Turbo 2, Docker (node:24-bookworm-slim).
 
-**Spec:** the design canvas (9 artboards) in `docs/design/*.dc.html` (`canvas.json` is the index) plus the product decisions in this file.
+**Spec:** the product decisions in this file.
 
 **MVP scope:** everything on artboards 01–07 **except** anything agent-specific (AI-agent kind, agent policy UI, guardrails, approvals, delegation, SSO, forgot-password, p95 latency, CSV export, "Introspect a token" admin tool). Artboards 08 (Agent detail) and 09 (Approvals) are **post-MVP** (Phase 6) — the MVP schema must not block them. Only machine-to-machine flows; no end-user login flows, no authorization-code grant.
 
@@ -111,7 +111,7 @@ Error envelope for `/api`: `{ error: string_code, error_description: string, det
 - IDs in URLs are UUIDs; `client_id` is a separate opaque string.
 - Timestamps are `timestamptz`; the API returns ISO strings; the web formats relative times.
 - Tests live next to the code as `*.test.ts`; integration tests use `apps/api/src/test/{setup.ts,helpers.ts,factories.ts}` (`createTenant()`, `createApplication()`, `createResourceWithScopes()`, `grant()`, `loginAs()`, `tokenRequest()`).
-- Web: TanStack Router file-based routes, TanStack Query for all server state, Tailwind utility classes, no component library. Visual target = the `docs/design/*.dc.html` artboards (Inter / Space Grotesk / JetBrains Mono, accent `#3B5BDB`, neutral greys as in the files). Semantic HTML (`<button>`, `<a href>`, `<label for>`), 44px targets.
+- Web: TanStack Router file-based routes, TanStack Query for all server state, Tailwind utility classes, no component library. Visual target: Inter, Space Grotesk and JetBrains Mono, accent `#3B5BDB`, neutral greys. Semantic HTML (`<button>`, `<a href>`, `<label for>`), 44px targets.
 
 ## Review Focus
 
@@ -136,7 +136,7 @@ Inputs the spec implies but no artboard shows; each has a test pinned to the own
 
 ## Phase 0 — Scaffold (status: root config DONE, packages TODO)
 
-Done already: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `biome.json`, `tsconfig.base.json`, `vitest.config.ts`, `.npmrc`, `.gitignore`, `.dockerignore`, `renovate.json`, `Dockerfile`, `docker-compose.yml`, `docker-compose.prod.yml`, `.env.example`, `.github/workflows/{ci,docker}.yml`, `docs/design/*`.
+Done already: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `biome.json`, `tsconfig.base.json`, `vitest.config.ts`, `.npmrc`, `.gitignore`, `.dockerignore`, `renovate.json`, `Dockerfile`, `docker-compose.yml`, `docker-compose.prod.yml`, `.env.example`, `.github/workflows/{ci,docker}.yml`.
 
 ### Task 0.1 — Workspace packages skeleton  (Sonnet)
 
@@ -299,7 +299,7 @@ Done already: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `biome.json`,
 
 ## Phase 4 — Web admin UI  (4.1 first; then 4.2 ∥ 4.3 ∥ 4.4 ∥ 4.5)
 
-Visual spec = `docs/design/<Board>.dc.html` (open the file, read the markup + the `renderVals()` sample data; it is the exact layout, copy and colours). Replace sample data with API data. Drop everything listed under **MVP scope** exclusions. Shared pieces from 4.1 are the only allowed cross-task dependency.
+Visual spec: Inter, Space Grotesk and JetBrains Mono, accent `#3B5BDB`, and the layout and copy already in the admin UI. Replace sample data with API data. Drop everything listed under **MVP scope** exclusions. Shared pieces from 4.1 are the only allowed cross-task dependency.
 
 ### Task 4.1 — App shell, auth, Tenants page  (Sonnet)
 

@@ -1,0 +1,12 @@
+---
+import { compiledContent, frontmatter } from "../../../../../docs/integration.md";
+import Doc from "../../layouts/Doc.astro";
+import { rewriteDocLinks } from "../../rewrite-doc-links";
+
+const meta = frontmatter as { title: string; description: string };
+const html = rewriteDocLinks(await compiledContent());
+---
+
+<Doc locale="en" title={meta.title} description={meta.description} path="/docs/integration">
+  <Fragment set:html={html} />
+</Doc>

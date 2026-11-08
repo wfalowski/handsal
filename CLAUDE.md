@@ -2,7 +2,7 @@
 
 Self-hostable authorization server for services (and later AI agents) talking to each other. Each tenant has its own issuer `${PUBLIC_URL}/t/<slug>`, signing keys, applications (clients), resources (audiences) and scopes. Ships as one Docker image + PostgreSQL.
 
-**Work is driven by `Tasks.md`** — read it first; it holds product decisions, the data model, the API surface, conventions, and per-task agent briefs. Design spec lives in `docs/design/*.dc.html`.
+**Work is driven by `Tasks.md`** — read it first; it holds product decisions, the data model, the API surface, conventions, and per-task agent briefs.
 
 ## Commands
 - `docker compose up -d` — local PostgreSQL (`postgresql://handsal:handsal_dev@localhost:5434/handsal`)

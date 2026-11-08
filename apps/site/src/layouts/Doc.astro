@@ -12,8 +12,11 @@ interface Props {
 const { locale, title, description, path } = Astro.props;
 const copy = messages[locale];
 const pages = [
-  { path: "/docs", label: copy.docsOverview },
-  { path: "/docs/sdk", label: copy.docsSdk },
+  { path: "/docs", label: copy.docsOverview, localized: true },
+  { path: "/docs/sdk", label: copy.docsSdk, localized: true },
+  { path: "/docs/integration", label: copy.integration, localized: false },
+  { path: "/docs/deployment", label: copy.deployment, localized: false },
+  { path: "/docs/api", label: copy.docsApi, localized: false },
 ];
 ---
 
@@ -22,7 +25,10 @@ const pages = [
     <nav class="doc-nav" aria-label={copy.docs}>
       {
         pages.map((page) => (
-          <a href={localePath(locale, page.path)} aria-current={page.path === path ? "page" : undefined}>
+          <a
+            href={page.localized ? localePath(locale, page.path) : page.path}
+            aria-current={page.path === path ? "page" : undefined}
+          >
             {page.label}
           </a>
         ))

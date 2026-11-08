@@ -1,6 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
-import { githubUrl, homePath, localePath, messages, type Locale } from "../i18n";
+import { homePath, localePath, messages, type Locale } from "../i18n";
 
 interface Props {
   locale: Locale;
@@ -144,8 +144,8 @@ const here = homePath(locale);
         <pre><code>docker compose -f <span class="nowrap">docker-compose.prod.yml</span> up -d</code></pre>
         <p class="note">{copy.listens}</p>
         <div class="links">
-          <a href={`${githubUrl}/blob/main/docs/deployment.md`}>{copy.deployment}</a>
-          <a href={`${githubUrl}/blob/main/docs/integration.md`}>{copy.integration}</a>
+          <a href="/docs/deployment">{copy.deployment}</a>
+          <a href="/docs/integration">{copy.integration}</a>
           <a href={localePath(locale, "/docs/sdk")}>{copy.docsSdk}</a>
         </div>
       </div>

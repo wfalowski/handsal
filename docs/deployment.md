@@ -1,3 +1,8 @@
+---
+title: Deployment
+description: Run the Handsal container with PostgreSQL and a public URL.
+---
+
 # Deployment
 
 Handsal runs as one container (API, admin UI and background jobs in a single Node process) next to PostgreSQL 16. `docker-compose.prod.yml` wires both. The variables are described in the [README](../README.md#environment-reference).
