@@ -7,10 +7,13 @@ import { createJwksRoutes } from "./jwks.js";
 import { createRevokeRoutes } from "./revoke.js";
 import { createTokenRoutes } from "./token.js";
 
-// Mounted at /t/:slug. Every route below sees `c.var.tenant`.
+// Mounted at /t/:slug. Issuer routes see `c.var.tenant`. The wildcard used to cover
+// every /t/<segment>/... path, so a refresh of /t/<tenantId>/applications/<appId>
+// looked the UUID up as a slug and returned "unknown tenant".
 export const oauthRoutes = new Hono<AppEnv>();
 
-oauthRoutes.use("*", tenantResolver);
+oauthRoutes.use("/oauth/*", tenantResolver);
+oauthRoutes.use("/.well-known/*", tenantResolver);
 oauthRoutes.route("/oauth/token", createTokenRoutes());
 oauthRoutes.route("/.well-known", createDiscoveryRoutes());
 oauthRoutes.route("/.well-known", createJwksRoutes());

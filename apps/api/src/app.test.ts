@@ -113,6 +113,16 @@ describe("app", () => {
       const res = await spa.request("/anything-else");
       expect(res.status).toBe(200);
       expect(await res.text()).toContain("<title>spa</title>");
+
+      // Admin URLs share the /t/ prefix with the issuer. A refresh must get the SPA,
+      // not the OAuth "unknown tenant" error (the segment is a tenant id, not a slug).
+      const appPage = await spa.request(
+        "/t/11111111-1111-4111-8111-111111111111/applications/22222222-2222-4222-8222-222222222222",
+      );
+      expect(appPage.status).toBe(200);
+      expect(appPage.headers.get("Content-Type")).toContain("text/html");
+      expect(await appPage.text()).toContain("<title>spa</title>");
+      expect(appPage.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
     } finally {
       rmSync(publicDir, { recursive: true, force: true });
     }

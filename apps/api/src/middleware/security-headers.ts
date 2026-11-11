@@ -5,12 +5,16 @@ const API_CSP = "default-src 'none'; frame-ancestors 'none'";
 const SPA_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'";
 
+// Issuer endpoints only. /t/<tenantId>/applications and the other admin URLs are SPA
+// routes; a refresh must get index.html, not the tenant resolver.
+const TENANT_API = /^\/t\/[^/]+\/(?:oauth|\.well-known)(?:\/|$)/;
+
 /** Paths served by the API (JSON); everything else belongs to the admin SPA. */
 export function isApiPath(path: string): boolean {
   return (
     path === "/api" ||
     path.startsWith("/api/") ||
-    path.startsWith("/t/") ||
+    TENANT_API.test(path) ||
     path === "/health" ||
     path === "/ready" ||
     path === "/instance"

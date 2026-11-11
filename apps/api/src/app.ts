@@ -136,7 +136,7 @@ export function createApp({
     app.route("/api", managementRoutes);
 
     // In production, serve the built admin SPA (copied to ./public). API paths
-    // skip it so unknown /api, /t, /health, /ready, /instance routes still get a JSON 404.
+    // skip it so unknown /api, issuer, /health, /ready, /instance routes still get a JSON 404.
     if (serveSpa) {
       const assets = serveStatic({ root: publicDir });
       const spaIndex = serveStatic({ root: publicDir, path: "index.html" });
