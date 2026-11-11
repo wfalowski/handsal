@@ -265,6 +265,7 @@ function Header({
   const setStatus = useApplicationSetStatus(tenantId, app.id);
   const del = useApplicationDelete(tenantId, app.id);
   const [confirming, setConfirming] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [typed, setTyped] = useState("");
   const disabled = app.status === "disabled";
 
@@ -287,6 +288,9 @@ function Header({
       </div>
       {canEdit && (
         <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setRenaming(true)}>
+            Rename
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -309,6 +313,9 @@ function Header({
           </Button>
         </div>
       )}
+      <Dialog open={renaming} onClose={() => setRenaming(false)} title="Rename application">
+        <RenameForm tenantId={tenantId} app={app} onDone={() => setRenaming(false)} />
+      </Dialog>
       <Dialog
         open={confirming}
         onClose={() => {
@@ -345,6 +352,71 @@ function Header({
         </div>
       </Dialog>
     </div>
+  );
+}
+
+function RenameForm({
+  tenantId,
+  app,
+  onDone,
+}: {
+  tenantId: string;
+  app: ApplicationDto;
+  onDone: () => void;
+}) {
+  const toast = useToast();
+  const update = useApplicationUpdate(tenantId, app.id);
+  const [name, setName] = useState(app.name);
+  const [error, setError] = useState<string>();
+  const trimmed = name.trim();
+  const dirty = trimmed !== "" && trimmed !== app.name;
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!dirty) return;
+        setError(undefined);
+        update.mutate(
+          { name: trimmed },
+          {
+            onSuccess: () => {
+              toast.success("Application renamed");
+              onDone();
+            },
+            onError: (err) => {
+              if (err instanceof ApiRequestError && err.code === "application_exists") {
+                setError("An application with this name already exists");
+                return;
+              }
+              toast.error(err.message);
+            },
+          },
+        );
+      }}
+    >
+      <Input
+        label="Name"
+        value={name}
+        maxLength={255}
+        autoFocus
+        required
+        error={error}
+        onChange={(e) => {
+          setName(e.target.value);
+          setError(undefined);
+        }}
+      />
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={!dirty} loading={update.isPending}>
+          Save
+        </Button>
+      </div>
+    </form>
   );
 }
 

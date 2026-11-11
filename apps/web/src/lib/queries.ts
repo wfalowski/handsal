@@ -550,6 +550,7 @@ export type AgentFields = {
   delegationScopeMode?: ApplicationDto["delegationScopeMode"];
 };
 export type ApplicationWriteInput = AgentFields & {
+  name?: string;
   tokenEndpointAuthMethod?: ApplicationDto["tokenEndpointAuthMethod"];
   tokenTtlSeconds?: number | null;
 };
