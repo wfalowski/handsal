@@ -16,8 +16,8 @@ management API and the admin SPA on port 3000.
   `docker image ls handsal:local`.
 - **User:** runs as the unprivileged `node` user. The compiled app is owned by
   `node`; `node_modules` stays root-owned, so the app can't modify it.
-- **Healthcheck:** `HEALTHCHECK` polls `GET http://localhost:3000/health` every 30 s
-  (3 s timeout, 20 s start period, 3 retries). It assumes the default `PORT=3000`.
+- **Healthcheck:** `HEALTHCHECK` polls `GET http://127.0.0.1:$PORT/health` every 30 s
+  (3 s timeout, 20 s start period, 3 retries). `$PORT` defaults to `3000`.
 - **Startup order:**
   1. The HTTP listener starts. `/health` returns 200 straight away and stays 200.
      `/ready` returns 503 `{"status":"migrating"}`.
