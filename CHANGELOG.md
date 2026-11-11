@@ -1,3 +1,9 @@
+## [0.1.0](https://github.com/wfalowski/handsal/compare/v0.0.1...v0.1.0) (2026-11-11)
+
+### Features
+
+* rename an application from its page ([3869666](https://github.com/wfalowski/handsal/commit/386966678deb04fb6687da12dbdd2990928d0cb7))
+
 # Changelog
 
 All notable changes are documented here. The format follows
