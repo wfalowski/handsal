@@ -166,7 +166,20 @@ Handsal is licensed under the [Apache License, Version 2.0](LICENSE).
 
 An enterprise edition with additional features may follow later, as its own package under a separate commercial license.
 
+## Releases
+
+A push to `main` cuts a release when its commits use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). The Docker workflow tags `vX.Y.Z`, updates `CHANGELOG.md` and the version `GET /health` reports, opens a GitHub release, and publishes `ghcr.io/wfalowski/handsal:X.Y.Z`, `:X.Y`, and `:stable`. Every main push also publishes `:latest`. Nothing is published to npm.
+
+| Commit | Next version |
+|---|---|
+| `fix: reject an expired assertion` | patch `0.0.x` |
+| `feat: add a scope ceiling` | minor `0.x.0` |
+| `feat!: require the resource parameter` or a `BREAKING CHANGE:` footer | major `x.0.0` |
+
+`docs:`, `chore:`, `ci:`, `refactor:`, `test:`, and `style:` do not cut a release. `pnpm install` installs a `commit-msg` hook that rejects other shapes. The first run, when no `v*` tag exists yet, tags the tree `v0.0.1` and later commits move on from there.
+
 ## Contributing
 
 Open an issue before sending a change.
 Before submitting, run `pnpm check && pnpm typecheck && pnpm test`.
+
