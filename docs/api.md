@@ -97,6 +97,7 @@ Access token: JWT, header `{alg:"ES256", kid, typ:"at+jwt"}`, claims `iss` (`<is
 |---|---|---|---|---|
 | GET | `/health` | none | 200 `{status:"ok", version}` | |
 | GET | `/ready` | none | 200 `{status:"ok"}` | 503 `{status:"db_unavailable"}` |
+| GET | `/instance` | none | 200 `{name, environment}` | `environment` is `null` when `INSTANCE_ENVIRONMENT` is unset. `name` comes from `INSTANCE_NAME` (default `Handsal`). |
 
 ## Management API (`/api`)
 

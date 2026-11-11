@@ -28,6 +28,22 @@ import { ApiRequestError, api } from "./api";
 import { clearSession, setSession } from "./auth";
 import type { MeResponse, MeUser, TenantListItem } from "./types";
 
+export type InstanceInfo = {
+  name: string;
+  environment: string | null;
+};
+
+export const instanceQueryOptions = queryOptions({
+  queryKey: ["instance"],
+  queryFn: () => api<InstanceInfo>("/instance"),
+  staleTime: Number.POSITIVE_INFINITY,
+  retry: false,
+});
+
+export function useInstance() {
+  return useQuery(instanceQueryOptions);
+}
+
 export const meQueryOptions = queryOptions({
   queryKey: ["me"],
   queryFn: async () => {

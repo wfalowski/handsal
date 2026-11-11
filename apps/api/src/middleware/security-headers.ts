@@ -12,7 +12,8 @@ export function isApiPath(path: string): boolean {
     path.startsWith("/api/") ||
     path.startsWith("/t/") ||
     path === "/health" ||
-    path === "/ready"
+    path === "/ready" ||
+    path === "/instance"
   );
 }
 

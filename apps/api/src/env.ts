@@ -20,6 +20,13 @@ if (process.env.NODE_ENV !== "production") {
   if (envFile && existsSync(envFile)) dotenv.config({ path: envFile, quiet: true });
 }
 
+/** Blank orchestrator values (Coolify stores "") are unset, not a title of "". */
+function blankToUndefined(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().min(1),
@@ -40,6 +47,26 @@ export const envSchema = z.object({
   // when TRUST_PROXY=true). Default 1 = a single reverse proxy.
   TRUST_PROXY_HOP_COUNT: z.coerce.number().int().min(1).default(1),
   ENABLE_ADMIN_PANEL: z.enum(["true", "false"]).default("true"),
+  // Display name in the admin UI and the browser tab.
+  INSTANCE_NAME: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .min(1)
+      .max(80)
+      .regex(/^[^\p{C}<>]+$/u, "Must not contain control characters or < >")
+      .default("Handsal"),
+  ),
+  // Short badge so two deployments are easy to tell apart, for example PRE.
+  INSTANCE_ENVIRONMENT: z.preprocess(
+    blankToUndefined,
+    z
+      .string()
+      .min(1)
+      .max(32)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "Use letters, digits, dots, underscores or hyphens")
+      .optional(),
+  ),
   // Token endpoint rate limits. One shared egress IP is still allowed hundreds
   // of token requests per minute, but it must not be able to schedule more
   // Argon2 than the process can finish; the per-source lane cap is the

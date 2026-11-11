@@ -1,9 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import { initials } from "../lib/format";
 import { useLogout, useMe } from "../lib/queries";
+import { InstanceMark } from "./InstanceMark";
 import { Logo } from "./Logo";
 
-/** Top bar for pages without the tenant sidebar. `title` is the breadcrumb after "Handsal /". */
+/** Top bar for pages without the tenant sidebar. `title` is the breadcrumb after the instance name. */
 export function TopBar({ title }: { title: string }) {
   const me = useMe();
   const logout = useLogout();
@@ -12,9 +13,9 @@ export function TopBar({ title }: { title: string }) {
 
   return (
     <header className="flex h-14 flex-wrap items-center justify-between gap-4 border-line border-b bg-white pr-6 pl-6">
-      <div className="flex items-center gap-2.5">
+      <div className="flex min-w-0 items-center gap-2.5">
         <Logo />
-        <span className="font-display font-semibold text-base">Handsal</span>
+        <InstanceMark nameClassName="text-base" />
         <span className="text-line-strong">/</span>
         <span className="font-medium">{title}</span>
       </div>

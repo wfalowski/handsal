@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { InstanceMark } from "../components/InstanceMark";
 import { Logo } from "../components/Logo";
 import { ApiRequestError } from "../lib/api";
 import { useLogin } from "../lib/queries";
@@ -33,7 +34,7 @@ function LoginPage() {
       <section className="hidden min-w-0 flex-1 basis-1/2 flex-col justify-between gap-12 bg-[#0B0B0F] p-12 text-[#E7E7EA] md:flex">
         <div className="flex items-center gap-2.5">
           <Logo size={28} />
-          <span className="font-display font-semibold text-lg tracking-tight">Handsal</span>
+          <InstanceMark nameClassName="text-lg tracking-tight" />
         </div>
 
         <div className="flex max-w-[560px] flex-col gap-7">
@@ -90,8 +91,9 @@ function LoginPage() {
 
       <section className="flex min-w-0 flex-1 basis-1/2 items-center justify-center p-8">
         <form onSubmit={handleSubmit} className="flex w-full max-w-[380px] flex-col gap-6">
-          <div className="md:hidden">
+          <div className="flex items-center gap-2.5 md:hidden">
             <Logo size={28} />
+            <InstanceMark nameClassName="text-lg tracking-tight" />
           </div>
           <div className="flex flex-col gap-1.5">
             <h2 className="font-display font-semibold text-[26px] tracking-tight">Sign in</h2>

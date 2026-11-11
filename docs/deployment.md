@@ -153,7 +153,7 @@ Revoking a token (`/oauth/revoke`), "revoke all" (application or tenant), disabl
 
 ## Headless mode
 
-`ENABLE_ADMIN_PANEL=false` serves only the OAuth endpoints, `/health` and `/ready`; the admin UI is not served and `/api/*` answers `404 {"error":"not_found"}`. Create tenants, resources and applications first with the panel enabled, either before switching or in a second, private instance that uses the same database and the same `KEY_ENCRYPTION_SECRET`. A common layout is a public headless issuer plus an internal admin instance.
+`ENABLE_ADMIN_PANEL=false` serves only the OAuth endpoints, `/health`, `/ready` and `/instance`; the admin UI is not served and `/api/*` answers `404 {"error":"not_found"}`. Create tenants, resources and applications first with the panel enabled, either before switching or in a second, private instance that uses the same database and the same `KEY_ENCRYPTION_SECRET`. A common layout is a public headless issuer plus an internal admin instance.
 
 ## Outbound URLs
 

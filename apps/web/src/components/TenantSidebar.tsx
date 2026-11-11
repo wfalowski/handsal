@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { initials, tenantTint } from "../lib/format";
 import { useApprovalCounts, useJwksHealth, useLogout } from "../lib/queries";
 import type { MeTenant, MeUser } from "../lib/types";
+import { InstanceMark } from "./InstanceMark";
 
 type Props = { tenant: MeTenant; user: MeUser };
 
@@ -79,6 +80,7 @@ export function TenantSidebar({ tenant, user }: Props) {
 
   return (
     <aside className="flex shrink-0 flex-col gap-5 border-line border-b bg-white p-3 md:w-60 md:border-r md:border-b-0">
+      <InstanceMark nameClassName="text-[13px]" />
       <Link
         to="/tenants"
         aria-label="Switch tenant"

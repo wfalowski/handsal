@@ -68,7 +68,40 @@ describe("productionEnvSchema", () => {
       RATE_LIMIT_TOKEN_IP_MAX: 600,
       RATE_LIMIT_TOKEN_CLIENT_MAX: 600,
       TOKEN_EVENTS_RETENTION_DAYS: 30,
+      INSTANCE_NAME: "Handsal",
     });
+    expect(result.data?.INSTANCE_ENVIRONMENT).toBeUndefined();
+  });
+
+  it("treats a blank instance name or environment as unset", () => {
+    const result = productionEnvSchema.safeParse(
+      prodEnv({ INSTANCE_NAME: "  ", INSTANCE_ENVIRONMENT: "" }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.INSTANCE_NAME).toBe("Handsal");
+    expect(result.data.INSTANCE_ENVIRONMENT).toBeUndefined();
+  });
+
+  it("accepts a display name and a short environment label", () => {
+    const result = productionEnvSchema.safeParse(
+      prodEnv({ INSTANCE_NAME: "  Handsal - Delvero  ", INSTANCE_ENVIRONMENT: "PRE" }),
+    );
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.data.INSTANCE_NAME).toBe("Handsal - Delvero");
+    expect(result.data.INSTANCE_ENVIRONMENT).toBe("PRE");
+  });
+
+  it("rejects a name with control characters or markup, and a loose environment label", () => {
+    expect(fieldErrors(prodEnv({ INSTANCE_NAME: "bad\nname" })).INSTANCE_NAME).toBeDefined();
+    expect(fieldErrors(prodEnv({ INSTANCE_NAME: "Handsal <script>" })).INSTANCE_NAME).toBeDefined();
+    expect(
+      fieldErrors(prodEnv({ INSTANCE_ENVIRONMENT: "PRE PROD" })).INSTANCE_ENVIRONMENT,
+    ).toBeDefined();
+    expect(
+      fieldErrors(prodEnv({ INSTANCE_ENVIRONMENT: "-PRE" })).INSTANCE_ENVIRONMENT,
+    ).toBeDefined();
   });
 
   it("rejects the placeholder KEY_ENCRYPTION_SECRET in production", () => {

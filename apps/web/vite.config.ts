@@ -20,6 +20,7 @@ export default defineConfig({
       "^/t/[^/]+/(oauth|\\.well-known)": apiTarget,
       "/health": apiTarget,
       "/ready": apiTarget,
+      "/instance": apiTarget,
     },
   },
 });

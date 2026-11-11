@@ -123,6 +123,8 @@ Env is read only in `apps/api/src/env.ts`; the process exits at startup on inval
 | `TRUST_PROXY` | no | `false` | `true` behind a reverse proxy. `X-Forwarded-For` is used only when the TCP peer is loopback, private, link-local or CGNAT. | Startup warning if not `true` |
 | `TRUST_PROXY_HOP_COUNT` | no | `1` | Trusted proxy hops, counted from the right of `X-Forwarded-For`. | |
 | `ENABLE_ADMIN_PANEL` | no | `true` | `false` disables the admin UI and `/api` (headless issuer). | |
+| `INSTANCE_NAME` | no | `Handsal` | Display name in the admin UI and the browser tab. Blank counts as unset. | |
+| `INSTANCE_ENVIRONMENT` | no | unset | Short badge such as `PRE`. Letters, digits, `.`, `_`, `-`. Blank counts as unset. | |
 | `RATE_LIMIT_TOKEN_IP_MAX` | no | `600` | Requests per minute per IP on `/oauth/token`. | |
 | `RATE_LIMIT_TOKEN_CLIENT_MAX` | no | `600` | Per minute per `client_id` on `/oauth/token`. | |
 | `RATE_LIMIT_INTROSPECT_IP_MAX` | no | `1200` | Per minute per IP on `/oauth/introspect`. | |
@@ -145,7 +147,7 @@ Per tenant, under the issuer `https://<host>/t/<slug>`:
 | GET | `/.well-known/oauth-authorization-server` | Same document (RFC 8414) |
 | GET | `/.well-known/jwks.json` | Public signing keys |
 
-Instance level: `GET /health` (process is up, returns the version), `GET /ready` (database reachable, else 503), `/api/*` management API (admin session), `/` admin UI. Full reference: [docs/api.md](docs/api.md).
+Instance level: `GET /health` (process is up, returns the version), `GET /ready` (database reachable, else 503), `GET /instance` (display name and environment label), `/api/*` management API (admin session), `/` admin UI. Full reference: [docs/api.md](docs/api.md).
 
 ## Examples
 

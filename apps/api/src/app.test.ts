@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createApp, createReadiness } from "./app.js";
+import { env } from "./env.js";
 import { formRequest } from "./test/helpers.js";
 
 const app = createApp({ readinessCheck: async () => {} });
@@ -12,6 +13,16 @@ describe("app", () => {
     const res = await app.request("/health");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: "ok", version: expect.any(String) });
+  });
+
+  it("GET /instance returns the display name and environment", async () => {
+    const res = await app.request("/instance");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      name: env.INSTANCE_NAME,
+      environment: env.INSTANCE_ENVIRONMENT ?? null,
+    });
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
   });
 
   it("GET /ready returns 200 when the readiness check resolves", async () => {
@@ -94,6 +105,10 @@ describe("app", () => {
         expect([401, 404], path).toContain(res.status);
         expect(res.headers.get("Content-Type"), path).toContain("application/json");
       }
+
+      const instance = await spa.request("/instance");
+      expect(instance.status).toBe(200);
+      expect(instance.headers.get("Content-Type")).toContain("application/json");
 
       const res = await spa.request("/anything-else");
       expect(res.status).toBe(200);
