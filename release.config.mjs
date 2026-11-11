@@ -3,6 +3,8 @@ export default {
   branches: ["main"],
   tagFormat: "v${version}",
   plugins: [
+    // Preset 9.3.1 (package.json). v10 needs conventional-changelog-writer 9;
+    // semantic-release 25 still ships writer 8, and v10's notes template fails on it.
     ["@semantic-release/commit-analyzer", { preset: "conventionalcommits" }],
     ["@semantic-release/release-notes-generator", { preset: "conventionalcommits" }],
     ["@semantic-release/changelog", { changelogFile: "CHANGELOG.md" }],
