@@ -5,7 +5,7 @@ description: Sprawdzanie tokenów Handsal w aplikacji Hono, Express albo Next.js
 
 # Zabezpiecz API
 
-`@handsal/sdk` sprawdza token bearer na twoim API. To strona serwera zasobów. Usługa nadal prosi Handsal o token, a ten pakiet decyduje, czy wywołanie może przejść.
+`@handsal/sdk` obsługuje obie strony wywołania. `createHandsalClient` prosi Handsal o token `client_credentials`. `createHandsal` sprawdza token bearer na twoim API.
 
 Sprawdzenie jest lokalne. Pakiet pobiera klucze publiczne tenanta i weryfikuje każde żądanie:
 
@@ -138,6 +138,28 @@ try {
 | `task_id` | Jest, gdy agent nazwał zadanie |
 | `act`, `sub_kind` | Są na delegowanym tokenie |
 
+## Prośba o token
+
+Jeden klient na jedno API. Trzyma token do 30 sekund przed `exp` (albo do połowy czasu życia, gdy ta wypada wcześniej). Jednoczesne wywołania dzielą jedno żądanie. Sekret i token nie trafiają do błędu.
+
+```ts
+import { createHandsalClient } from "@handsal/sdk";
+
+export const orders = createHandsalClient({
+  issuer: "https://auth.example.com/t/acme",
+  clientId: process.env.CLIENT_ID ?? "",
+  clientSecret: process.env.CLIENT_SECRET ?? "",
+  resource: "https://api.acme.example/orders",
+  scope: "orders:read",
+});
+
+const authorization = await orders.authorization();
+```
+
+`issuer` to issuer tenanta. `resource` to audience tego API, porównywane dokładnie. `scope` to jeden zakres albo lista; pominięty zakres oznacza wszystkie przyznane na tym zasobie. Domyślne uwierzytelnienie to HTTP Basic (`client_secret_basic`). Aplikacja zarejestrowana jako `client_secret_post` potrzebuje `authentication: "client_secret_post"`.
+
+`taskId`, `actorHint` i `justification` idą w żądaniu, gdy zakres może czekać na człowieka. Ten klient nie podpisuje `private_key_jwt` i sam nie odpytuje zgody. Wstrzymane żądanie rzuca `HandsalClientError` z `code` równym `authorization_pending` oraz z `approvalId` i `interval`. Limit ustawia `retryAfter` z nagłówka `Retry-After`. Inna odmowa OAuth używa tego samego błędu (`status`, `code`, `description`). `clear()` kasuje cache.
+
 ## Czego ten pakiet nie robi
 
-Nie prosi o tokeny. Wołający nadal wysyła POST na `<issuer>/oauth/token`. Nie woła introspekcji i nie unieważnia tokenów. Jedno i drugie jest w [przewodniku integracji](integration.md).
+Nie podpisuje `private_key_jwt`, nie odpytuje zgody, nie woła introspekcji i nie unieważnia tokenu. Te żądania są w [przewodniku integracji](integration.md).

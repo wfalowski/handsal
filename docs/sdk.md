@@ -5,7 +5,7 @@ description: Verify Handsal access tokens in a Hono, Express, or Next.js app.
 
 # Protect an API
 
-`@handsal/sdk` checks a bearer token on your API. It is the resource-server side. Your service still asks Handsal for a token, and this package decides whether a call may proceed.
+`@handsal/sdk` does both sides of a call. `createHandsalClient` asks Handsal for a client-credentials token. `createHandsal` checks a bearer token on your API.
 
 The check is local. The package fetches the tenant's public keys, then verifies each request:
 
@@ -138,6 +138,28 @@ try {
 | `task_id` | Present when an agent named the task |
 | `act`, `sub_kind` | Present on a delegated token |
 
+## Request a token
+
+Create one client per API you call. It caches the token until 30 seconds before `exp` (or half the lifetime, when that is sooner) and concurrent calls share one request. The secret and the token are not put in the error.
+
+```ts
+import { createHandsalClient } from "@handsal/sdk";
+
+export const orders = createHandsalClient({
+  issuer: "https://auth.example.com/t/acme",
+  clientId: process.env.CLIENT_ID ?? "",
+  clientSecret: process.env.CLIENT_SECRET ?? "",
+  resource: "https://api.acme.example/orders",
+  scope: "orders:read",
+});
+
+const authorization = await orders.authorization();
+```
+
+`issuer` is the tenant issuer. `resource` is that API's audience, matched exactly. `scope` is one scope or a list; omit it to receive every scope granted on that resource. The default authentication is HTTP Basic (`client_secret_basic`). An application registered as `client_secret_post` needs `authentication: "client_secret_post"`.
+
+`taskId`, `actorHint`, and `justification` are sent when a scope may wait for a person. This client does not sign `private_key_jwt` and does not poll an approval. A held request throws `HandsalClientError` with `code` `authorization_pending`, plus `approvalId` and `interval`. A rate limit sets `retryAfter` from `Retry-After`. Other OAuth refusals use the same error (`status`, `code`, `description`). `clear()` drops the cache.
+
 ## What this does not do
 
-It does not request tokens. A caller still posts to `<issuer>/oauth/token`. It does not call introspection, and it does not revoke tokens. Both are in the [integration guide](integration.md).
+It does not sign `private_key_jwt`, poll an approval, call introspection, or revoke a token. Those requests are in the [integration guide](integration.md).

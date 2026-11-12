@@ -6,7 +6,7 @@ This repository is a pnpm monorepo with three parts:
 
 - **Platform** — [`apps/api`](apps/api) is the server, [`apps/web`](apps/web) is the admin UI, and [`packages/db`](packages/db) and [`packages/shared`](packages/shared) sit behind them. This is what the Docker image contains.
 - **Landing** — [`apps/site`](apps/site) is the public site, including `/docs`. It is static, deployed on its own, and not part of the image. `pnpm site` serves it locally.
-- **SDK** — [`packages/sdk`](packages/sdk) (`@handsal/sdk`) checks a bearer token in a Hono, Express, or Next.js app. Install it with `npm install @handsal/sdk`. See [docs/sdk.md](docs/sdk.md).
+- **SDK** — [`packages/sdk`](packages/sdk) (`@handsal/sdk`) requests a client-credentials token and checks a bearer token in a Hono, Express, or Next.js app. Install it with `npm install @handsal/sdk`. See [docs/sdk.md](docs/sdk.md).
 
 The longer guides are markdown in [`docs/`](docs/).
 
@@ -103,7 +103,7 @@ pnpm dev                  # API on :3000, admin UI on :5173
 - `pnpm smoke` runs `scripts/smoke.sh` against a running instance (`SMOKE_ADMIN_EMAIL` and `SMOKE_ADMIN_PASSWORD` of a super-admin; see `scripts/README.md`).
 - Also: `pnpm check` (Biome), `pnpm typecheck`, `pnpm build`, `pnpm db:generate`, `pnpm db:seed`.
 - `pnpm site` runs the marketing page (`apps/site`) on port 4321. It is a static Astro site, deployed separately from the Docker image. See [Landing](docs/deployment.md#landing). The same site serves `/docs` from the markdown in `docs/`.
-- `@handsal/sdk` (`packages/sdk`) verifies access tokens in a Hono, Express, or Next.js API. See [docs/sdk.md](docs/sdk.md).
+- `@handsal/sdk` (`packages/sdk`) requests client-credentials tokens and verifies access tokens in a Hono, Express, or Next.js API. See [docs/sdk.md](docs/sdk.md).
 
 ## Environment reference
 

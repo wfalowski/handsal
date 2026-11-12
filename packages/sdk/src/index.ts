@@ -1,4 +1,10 @@
 export type {
+  HandsalClient,
+  HandsalClientOptions,
+  HandsalClientToken,
+} from "./client.js";
+export { createHandsalClient, HandsalClientError } from "./client.js";
+export type {
   Handsal,
   HandsalAccessToken,
   HandsalOptions,

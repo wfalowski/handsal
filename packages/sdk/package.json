@@ -1,7 +1,7 @@
 {
   "name": "@handsal/sdk",
   "version": "0.0.1",
-  "description": "Verify Handsal ES256 access tokens in a Hono, Express, or Next.js API.",
+  "description": "Request Handsal client-credentials tokens and verify ES256 access tokens.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {

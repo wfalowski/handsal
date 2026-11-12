@@ -34,36 +34,22 @@ curl -s -u "$CLIENT_ID:$CLIENT_SECRET" \
   https://auth.example.com/t/acme/oauth/token
 ```
 
-### Node (fetch, with caching)
+### Node (`@handsal/sdk`)
 
-```js
-const ISSUER = "https://auth.example.com/t/acme";
-let cached; // { token, expiresAt }
+The client caches the token until 30 seconds before `exp` and shares one request across concurrent calls. Use `authentication: "client_secret_post"` when the application is registered that way.
 
-export async function getToken() {
-  if (cached && Date.now() < cached.expiresAt - 30_000) return cached.token;
+```ts
+import { createHandsalClient } from "@handsal/sdk";
 
-  const basic = Buffer.from(
-    `${encodeURIComponent(process.env.CLIENT_ID)}:${encodeURIComponent(process.env.CLIENT_SECRET)}`,
-  ).toString("base64");
-  const res = await fetch(`${ISSUER}/oauth/token`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${basic}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      resource: "https://api.acme.example/orders",
-      scope: "orders:read",
-    }),
-  });
-  const body = await res.json();
-  if (!res.ok) throw Object.assign(new Error(body.error_description), { code: body.error, status: res.status });
+const orders = createHandsalClient({
+  issuer: "https://auth.example.com/t/acme",
+  clientId: process.env.CLIENT_ID ?? "",
+  clientSecret: process.env.CLIENT_SECRET ?? "",
+  resource: "https://api.acme.example/orders",
+  scope: "orders:read orders:write",
+});
 
-  cached = { token: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 };
-  return cached.token;
-}
+const authorization = await orders.authorization();
 ```
 
 ### Python (requests)
