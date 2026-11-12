@@ -6,7 +6,7 @@ This repository is a pnpm monorepo with three parts:
 
 - **Platform** — [`apps/api`](apps/api) is the server, [`apps/web`](apps/web) is the admin UI, and [`packages/db`](packages/db) and [`packages/shared`](packages/shared) sit behind them. This is what the Docker image contains.
 - **Landing** — [`apps/site`](apps/site) is the public site, including `/docs`. It is static, deployed on its own, and not part of the image. `pnpm site` serves it locally.
-- **SDK** — [`packages/sdk`](packages/sdk) (`@handsal/sdk`) checks a bearer token in a Hono, Express, or Next.js app. See [docs/sdk.md](docs/sdk.md).
+- **SDK** — [`packages/sdk`](packages/sdk) (`@handsal/sdk`) checks a bearer token in a Hono, Express, or Next.js app. Install it with `npm install @handsal/sdk`. See [docs/sdk.md](docs/sdk.md).
 
 The longer guides are markdown in [`docs/`](docs/).
 
@@ -170,7 +170,7 @@ An enterprise edition with additional features may follow later, as its own pack
 
 ## Releases
 
-A push to `main` cuts a release when its commits use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). The Docker workflow tags `vX.Y.Z`, updates `CHANGELOG.md` and the version `GET /health` reports, opens a GitHub release, and publishes `ghcr.io/wfalowski/handsal:X.Y.Z`, `:X.Y`, and `:stable`. Every main push also publishes `:latest`. Nothing is published to npm.
+A push to `main` cuts a release when its commits use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). The Docker workflow tags `vX.Y.Z`, updates `CHANGELOG.md` and the version `GET /health` reports, opens a GitHub release, and publishes `ghcr.io/wfalowski/handsal:X.Y.Z`, `:X.Y`, and `:stable`. Every main push also publishes `:latest`. The same tag publishes `@handsal/sdk` to npm. `@handsal/shared` and `@handsal/db` are not published.
 
 | Commit | Next version |
 |---|---|

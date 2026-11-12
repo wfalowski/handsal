@@ -26,7 +26,8 @@
     "db:migrate": "pnpm --filter @handsal/db migrate",
     "db:seed": "pnpm --filter @handsal/db seed",
     "prepare": "husky || true",
-    "release": "semantic-release"
+    "release": "semantic-release",
+    "publish:packages": "node scripts/publish-packages.mjs"
   },
   "engines": {
     "node": ">=24",

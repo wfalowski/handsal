@@ -26,6 +26,8 @@ jobs:
     permissions:
       contents: write
       packages: write
+      # npm provenance signs the @handsal/sdk publish with this job's OIDC token.
+      id-token: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -91,6 +93,18 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # After the image push. HEAD is the release commit when a tag was just
+      # cut. The script publishes @handsal/sdk only, no-ops otherwise, and
+      # skips a version already on npm so a re-run can finish a failed publish.
+      # Auth is npm Trusted Publishing on this job's OIDC token. Do not set
+      # NPM_TOKEN or NODE_AUTH_TOKEN, and do not add setup-node registry-url:
+      # a registry token makes npm skip OIDC. The npm trusted publisher is
+      # repository wfalowski/handsal, workflow filename docker.yml, environment
+      # empty, with direct npm publish allowed.
+      - name: Publish npm packages
+        run: node scripts/publish-packages.mjs
+        env:
+          HUSKY: "0"
 
   build-and-push:
     needs: ci

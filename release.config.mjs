@@ -1,4 +1,8 @@
-/** Conventional Commits on main → semver tag, changelog, GitHub release. No npm publish. */
+/**
+ * Conventional Commits on main → semver tag, changelog, GitHub release.
+ * This bumps @handsal/sdk to the same version. The Docker workflow publishes
+ * that package to npm when HEAD is tagged; a failed publish can be re-run.
+ */
 export default {
   branches: ["main"],
   tagFormat: "v${version}",
@@ -12,15 +16,21 @@ export default {
     [
       "@semantic-release/exec",
       {
-        // npm only rewrites the root manifest. /health reads apps/api/package.json.
+        // npm only rewrites the root manifest. /health reads apps/api.
+        // @handsal/sdk publishes at this same version. shared and db stay private.
         prepareCmd:
-          "node scripts/sync-version.mjs ${nextRelease.version} && pnpm exec biome check --write package.json apps/api/package.json",
+          "node scripts/sync-version.mjs ${nextRelease.version} && pnpm exec biome check --write package.json apps/api/package.json packages/sdk/package.json",
       },
     ],
     [
       "@semantic-release/git",
       {
-        assets: ["CHANGELOG.md", "package.json", "apps/api/package.json"],
+        assets: [
+          "CHANGELOG.md",
+          "package.json",
+          "apps/api/package.json",
+          "packages/sdk/package.json",
+        ],
         message: "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}",
       },
     ],

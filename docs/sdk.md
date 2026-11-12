@@ -23,21 +23,13 @@ If the JWKS document cannot be fetched, the request fails. It is not reported as
 
 ## Install
 
-The package is `@handsal/sdk` in `packages/sdk`. It depends on `jose` and does not import the Handsal server.
-
-Inside this repository, depend on the workspace:
-
-```json
-{ "dependencies": { "@handsal/sdk": "workspace:*" } }
+```bash
+npm install @handsal/sdk
 ```
 
-From another application, point a dependency at that directory. The package is TypeScript source, same as the rest of this repository. Next.js needs one setting so it will compile it:
+The package is compiled ESM and TypeScript types. It depends on `jose` and does not import the Handsal server. Inside this repository the dependency is `"@handsal/sdk": "workspace:*"`.
 
-```ts
-const nextConfig = { transpilePackages: ["@handsal/sdk"] };
-```
-
-A server that already compiles its dependencies, such as `tsx` or a bundler, can import it directly. Create the verifier once, at module scope. Key lookups are cached, and an unknown `kid` is fetched again, so a rotation does not need a restart.
+Create the verifier once, at module scope. Key lookups are cached, and an unknown `kid` is fetched again, so a rotation does not need a restart.
 
 ```ts
 import { createHandsal } from "@handsal/sdk";

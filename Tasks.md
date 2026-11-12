@@ -20,7 +20,7 @@
 
 | Topic | Decision |
 |---|---|
-| Name / scope | `handsal`, packages `@handsal/api`, `@handsal/web`, `@handsal/db`, `@handsal/shared`. Open source under **Apache License 2.0** (`LICENSE`). The "Open source · MIT" line on artboard 01 is wrong — omit it from the UI. |
+| Name / scope | `handsal`, apps `@handsal/api`, `@handsal/web`, `@handsal/site`. Internal libraries `@handsal/db`, `@handsal/shared`. Published to npm: `@handsal/sdk` only. Open source under **Apache License 2.0** (`LICENSE`). The "Open source · MIT" line on artboard 01 is wrong — omit it from the UI. |
 | Tenant issuer | Path-based: `iss = ${PUBLIC_URL}/t/${tenant.slug}`. All OAuth endpoints live under `/t/:slug`. Custom domains per tenant are post-MVP. |
 | Endpoints (per tenant) | `POST /t/:slug/oauth/token`, `POST /t/:slug/oauth/introspect` (RFC 7662), `POST /t/:slug/oauth/revoke` (RFC 7009), `GET /t/:slug/.well-known/openid-configuration`, `GET /t/:slug/.well-known/oauth-authorization-server` (RFC 8414, same body), `GET /t/:slug/.well-known/jwks.json`. |
 | Signing | ES256 (P-256) per tenant, `kid = k_<YYYY-MM-DD>_<4 hex>`. Private keys AES-256-GCM encrypted at rest with `KEY_ENCRYPTION_SECRET`. Key states `active → retiring → retired`; JWKS serves active + retiring. |

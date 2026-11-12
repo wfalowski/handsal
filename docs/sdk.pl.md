@@ -23,21 +23,13 @@ Gdy dokumentu JWKS nie da się pobrać, żądanie kończy się błędem. Nie jes
 
 ## Instalacja
 
-Pakiet to `@handsal/sdk` w `packages/sdk`. Zależy od `jose` i nie importuje serwera Handsal.
-
-W tym repozytorium zależność workspace:
-
-```json
-{ "dependencies": { "@handsal/sdk": "workspace:*" } }
+```bash
+npm install @handsal/sdk
 ```
 
-Z innej aplikacji wskaż zależność na ten katalog. Pakiet jest źródłem TypeScript, tak jak reszta tego repozytorium. Next.js potrzebuje jednego ustawienia, żeby go skompilować:
+Pakiet to skompilowany ESM i typy TypeScript. Zależy od `jose` i nie importuje serwera Handsal. W tym repozytorium zależność workspace to `"@handsal/sdk": "workspace:*"`.
 
-```ts
-const nextConfig = { transpilePackages: ["@handsal/sdk"] };
-```
-
-Serwer, który już kompiluje zależności, na przykład `tsx` albo bundler, importuje go wprost. Weryfikator tworzysz raz, w zakresie modułu. Odczyty kluczy są cache'owane, a nieznany `kid` jest pobierany ponownie, więc rotacja nie wymaga restartu.
+Weryfikator tworzysz raz, w zakresie modułu. Odczyty kluczy są cache'owane, a nieznany `kid` jest pobierany ponownie, więc rotacja nie wymaga restartu.
 
 ```ts
 import { createHandsal } from "@handsal/sdk";

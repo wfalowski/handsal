@@ -11,3 +11,4 @@ dist/
 .claude/worktrees/
 *.tsbuildinfo
 .playwright-mcp/
+.npm-publish/

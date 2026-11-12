@@ -1,14 +1,43 @@
 {
   "name": "@handsal/sdk",
   "version": "0.0.1",
-  "private": true,
+  "description": "Verify Handsal ES256 access tokens in a Hono, Express, or Next.js API.",
+  "license": "Apache-2.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wfalowski/handsal.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/wfalowski/handsal/blob/main/docs/sdk.md",
+  "bugs": {
+    "url": "https://github.com/wfalowski/handsal/issues"
+  },
+  "keywords": [
+    "handsal",
+    "oauth",
+    "oauth2",
+    "jwt",
+    "jwks",
+    "es256"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
+    "prepublishOnly": "echo 'Publish from the repo root: node scripts/publish-packages.mjs' >&2 && exit 1",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
