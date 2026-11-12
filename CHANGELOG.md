@@ -1,3 +1,9 @@
+## [0.2.0](https://github.com/wfalowski/handsal/compare/v0.1.0...v0.2.0) (2026-11-12)
+
+### Features
+
+* add a client-credentials client to the SDK ([e82a67c](https://github.com/wfalowski/handsal/commit/e82a67c6cacd18858f4d55c9f68332b71ece3d8b))
+
 ## [0.1.0](https://github.com/wfalowski/handsal/compare/v0.0.1...v0.1.0) (2026-11-11)
 
 ### Features
