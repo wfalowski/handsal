@@ -56,6 +56,75 @@ describe("createHandsalClient", () => {
     expect(() => createHandsalClient({ ...base, taskId: "has space" })).toThrow(/taskId/);
   });
 
+  it("posts to tokenUrl as given, with the same credentials and redirect policy", async () => {
+    const tokenUrl = "https://gateway.example.net/oauth2/token/";
+    const ok = () =>
+      tokenResponse(200, {
+        access_token: "jwt-1",
+        token_type: "Bearer",
+        expires_in: 60,
+        scope: "orders:read",
+      });
+    const basic = vi.fn<typeof fetch>(async () => ok());
+    await client(basic, { tokenUrl: `  ${tokenUrl} ` }).getToken();
+    expect(basic.mock.calls[0]?.[0]).toBe(tokenUrl);
+    const basicInit = requestInit(basic);
+    expect(basicInit.redirect).toBe("error");
+    expect(decodeBasic((basicInit.headers as Record<string, string>).Authorization)).toEqual({
+      clientId: "app_test",
+      clientSecret: "hs/a+b= c",
+    });
+    expect(basicInit.cache).toBe("no-store");
+    expect(String(basicInit.body)).toBe(
+      "grant_type=client_credentials&resource=https%3A%2F%2Fapi.acme.example%2Forders&scope=orders%3Aread+orders%3Awrite",
+    );
+
+    const post = vi.fn<typeof fetch>(async () => ok());
+    await client(post, { tokenUrl, authentication: "client_secret_post" }).getToken();
+    expect(post.mock.calls[0]?.[0]).toBe(tokenUrl);
+    const postInit = requestInit(post);
+    expect(postInit.redirect).toBe("error");
+    expect((postInit.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect(String(postInit.body)).toContain("client_id=app_test");
+    expect(String(postInit.body)).toContain("client_secret=hs%2Fa%2Bb%3D+c");
+  });
+
+  it("treats a blank tokenUrl as absent and rejects a non-http one", async () => {
+    for (const tokenUrl of ["", "   "]) {
+      const fetchImpl = vi.fn<typeof fetch>(async () =>
+        tokenResponse(200, {
+          access_token: "jwt-1",
+          token_type: "Bearer",
+          expires_in: 60,
+          scope: "orders:read",
+        }),
+      );
+      await client(fetchImpl, { tokenUrl }).getToken();
+      expect(fetchImpl.mock.calls[0]?.[0]).toBe(`${ISSUER}/oauth/token`);
+    }
+    const fetchImpl = vi.fn<typeof fetch>();
+    expect(() => client(fetchImpl, { tokenUrl: "file:///etc/passwd" })).toThrow(
+      "Handsal tokenUrl is invalid",
+    );
+    expect(() => client(fetchImpl, { tokenUrl: "not a url" })).toThrow(
+      "Handsal tokenUrl is invalid",
+    );
+    expect(() => client(fetchImpl, { tokenUrl: "javascript:alert(1)" })).toThrow(/tokenUrl/);
+    expect(() =>
+      client(fetchImpl, { tokenUrl: "http://localhost:3000/t/acme/oauth/token" }),
+    ).not.toThrow();
+  });
+
+  it("still requires issuer when tokenUrl is set, and reports issuer first", () => {
+    const base = { issuer: ISSUER, clientId: "app_test", clientSecret: "hs", resource: RESOURCE };
+    expect(() =>
+      createHandsalClient({ ...base, issuer: " ", tokenUrl: "https://gateway.example.net/token" }),
+    ).toThrow(/issuer/);
+    expect(() => createHandsalClient({ ...base, issuer: " ", tokenUrl: "file:///x" })).toThrow(
+      /issuer/,
+    );
+  });
+
   it("sends Basic client credentials and caches one token per client", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));

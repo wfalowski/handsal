@@ -156,7 +156,7 @@ export const orders = createHandsalClient({
 const authorization = await orders.authorization();
 ```
 
-`issuer` to issuer tenanta. `resource` to audience tego API, porównywane dokładnie. `scope` to jeden zakres albo lista; pominięty zakres oznacza wszystkie przyznane na tym zasobie. Domyślne uwierzytelnienie to HTTP Basic (`client_secret_basic`). Aplikacja zarejestrowana jako `client_secret_post` potrzebuje `authentication: "client_secret_post"`.
+`issuer` to issuer tenanta; klient wysyła żądanie na `${issuer}/oauth/token`. `tokenUrl` zastępuje ten adres pełnym adresem endpointu tokenów, użytym bez zmian (na przykład `tokenUrl: "https://gateway.example.net/oauth2/token"` za bramą API). Musi mieć schemat `http:` albo `https:`, a pusta wartość jest pomijana. Identyfikator i sekret klienta trafiają do tego hosta, więc `tokenUrl` wskazuj tylko na zaufany host. Przy podanym `tokenUrl` `issuer` nadal jest wymagany, ale nie wpływa na żądanie. `resource` to audience tego API, porównywane dokładnie. `scope` to jeden zakres albo lista; pominięty zakres oznacza wszystkie przyznane na tym zasobie. Domyślne uwierzytelnienie to HTTP Basic (`client_secret_basic`). Aplikacja zarejestrowana jako `client_secret_post` potrzebuje `authentication: "client_secret_post"`.
 
 `taskId`, `actorHint` i `justification` idą w żądaniu, gdy zakres może czekać na człowieka. Ten klient nie podpisuje `private_key_jwt` i sam nie odpytuje zgody. Wstrzymane żądanie rzuca `HandsalClientError` z `code` równym `authorization_pending` oraz z `approvalId` i `interval`. Limit ustawia `retryAfter` z nagłówka `Retry-After`. Inna odmowa OAuth używa tego samego błędu (`status`, `code`, `description`). `clear()` kasuje cache.
 

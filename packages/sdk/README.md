@@ -23,7 +23,7 @@ export const handsal = createHandsal({
 });
 ```
 
-The check is local. The package fetches the tenant JWKS and verifies the ES256 `at+jwt` signature, issuer, audience, expiry, and scopes. The client calls the token endpoint and caches the bearer token. It depends on `jose`.
+The check is local. The package fetches the tenant JWKS and verifies the ES256 `at+jwt` signature, issuer, audience, expiry, and scopes. The client calls the token endpoint and caches the bearer token. The endpoint is `${issuer}/oauth/token` unless you pass a full `tokenUrl`, for example `tokenUrl: "https://gateway.example.net/oauth2/token"`; the client id and secret go to that host, so use only a host you trust. It depends on `jose`.
 
 `scopes` is one scope or a list. Every listed scope must be on the token. Omit it to accept any valid token for this audience. A missing or invalid token is `401`. A valid token without the scope is `403`.
 

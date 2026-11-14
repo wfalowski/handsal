@@ -7,8 +7,17 @@ export interface HandsalClientToken {
 }
 
 export interface HandsalClientOptions {
-  /** Tenant issuer, for example `https://auth.example.com/t/acme`. A trailing slash is ignored. */
+  /**
+   * Tenant issuer, for example `https://auth.example.com/t/acme`. A trailing slash is ignored.
+   * The token endpoint is `${issuer}/oauth/token` unless `tokenUrl` replaces it.
+   */
   issuer: string;
+  /**
+   * Full token endpoint URL, used as given instead of `${issuer}/oauth/token`.
+   * The client credentials are sent to this host, so point it only at a host you trust.
+   * Blank means not set.
+   */
+  tokenUrl?: string;
   clientId: string;
   clientSecret: string;
   /** Audience of the API this client calls. Sent as `resource`. */
@@ -81,6 +90,19 @@ function required(value: string | undefined, label: string): string {
   return trimmed;
 }
 
+function tokenUrlParam(value: string | undefined): string | undefined {
+  const trimmed = value?.trim() ?? "";
+  if (trimmed === "") return undefined;
+  let protocol: string;
+  try {
+    protocol = new URL(trimmed).protocol;
+  } catch {
+    throw new Error("Handsal tokenUrl is invalid");
+  }
+  if (protocol !== "https:" && protocol !== "http:") throw new Error("Handsal tokenUrl is invalid");
+  return trimmed;
+}
+
 function scopeParam(scope: HandsalClientOptions["scope"]): string | undefined {
   if (scope === undefined) return undefined;
   const parts = (typeof scope === "string" ? scope.split(/\s+/) : scope)
@@ -117,6 +139,7 @@ export function createHandsalClient(options: HandsalClientOptions): HandsalClien
   const clientSecret = required(options.clientSecret, "clientSecret");
   const resource = required(options.resource, "resource");
   if (resource.length > 512) throw new Error("Handsal resource is too long");
+  const tokenUrl = tokenUrlParam(options.tokenUrl);
   const scope = scopeParam(options.scope);
   const authentication = options.authentication ?? "client_secret_basic";
   if (authentication !== "client_secret_basic" && authentication !== "client_secret_post") {
@@ -137,7 +160,7 @@ export function createHandsalClient(options: HandsalClientOptions): HandsalClien
   const leewayMs = options.leewayMs ?? DEFAULT_LEEWAY_MS;
   if (!Number.isFinite(leewayMs) || leewayMs < 0) throw new Error("Handsal leewayMs is invalid");
   const fetchImpl = options.fetch ?? fetch;
-  const endpoint = `${issuer}/oauth/token`;
+  const endpoint = tokenUrl ?? `${issuer}/oauth/token`;
 
   let generation = 0;
   let cached: { token: HandsalClientToken; receivedAt: number } | null = null;

@@ -156,7 +156,7 @@ export const orders = createHandsalClient({
 const authorization = await orders.authorization();
 ```
 
-`issuer` is the tenant issuer. `resource` is that API's audience, matched exactly. `scope` is one scope or a list; omit it to receive every scope granted on that resource. The default authentication is HTTP Basic (`client_secret_basic`). An application registered as `client_secret_post` needs `authentication: "client_secret_post"`.
+`issuer` is the tenant issuer; the client posts to `${issuer}/oauth/token`. `tokenUrl` replaces that with a full token endpoint URL, used as given (for example `tokenUrl: "https://gateway.example.net/oauth2/token"` behind a gateway). It must be `http:` or `https:`, and a blank value is ignored. The client id and secret go to that host, so point `tokenUrl` only at a host you trust. With `tokenUrl` set, `issuer` is still required but is not used for the request. `resource` is that API's audience, matched exactly. `scope` is one scope or a list; omit it to receive every scope granted on that resource. The default authentication is HTTP Basic (`client_secret_basic`). An application registered as `client_secret_post` needs `authentication: "client_secret_post"`.
 
 `taskId`, `actorHint`, and `justification` are sent when a scope may wait for a person. This client does not sign `private_key_jwt` and does not poll an approval. A held request throws `HandsalClientError` with `code` `authorization_pending`, plus `approvalId` and `interval`. A rate limit sets `retryAfter` from `Retry-After`. Other OAuth refusals use the same error (`status`, `code`, `description`). `clear()` drops the cache.
 
