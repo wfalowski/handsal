@@ -102,13 +102,13 @@ export async function revokeAdminSessions(
   return updated.length > 0;
 }
 
-/** Tenants the user is a member of, with their role. */
+/** Tenants the user is an `active` member of, with their role (`pending` invitations excluded). */
 export async function listTenantsForUser(userId: string): Promise<UserTenant[]> {
   const rows = await db
     .select({ id: tenants.id, name: tenants.name, slug: tenants.slug, role: tenantMembers.role })
     .from(tenantMembers)
     .innerJoin(tenants, eq(tenants.id, tenantMembers.tenantId))
-    .where(eq(tenantMembers.adminUserId, userId))
+    .where(and(eq(tenantMembers.adminUserId, userId), eq(tenantMembers.status, "active")))
     .orderBy(asc(tenants.name));
   return rows.map((t) => ({ ...t, issuer: issuerFor(t.slug) }));
 }
@@ -122,11 +122,18 @@ export async function listAllTenantsAsOwner(): Promise<UserTenant[]> {
   return rows.map((t) => ({ ...t, issuer: issuerFor(t.slug), role: "owner" as const }));
 }
 
+/** Role from an `active` membership; `pending` (invited, not accepted) grants nothing. */
 export async function getTenantRole(userId: string, tenantId: string): Promise<TenantRole | null> {
   const [row] = await db
     .select({ role: tenantMembers.role })
     .from(tenantMembers)
-    .where(and(eq(tenantMembers.adminUserId, userId), eq(tenantMembers.tenantId, tenantId)))
+    .where(
+      and(
+        eq(tenantMembers.adminUserId, userId),
+        eq(tenantMembers.tenantId, tenantId),
+        eq(tenantMembers.status, "active"),
+      ),
+    )
     .limit(1);
   return row?.role ?? null;
 }

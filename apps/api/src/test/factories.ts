@@ -7,6 +7,7 @@ import {
   db,
   resources,
   scopes,
+  type tenantMemberStatus,
   tenantMembers,
   tenants,
 } from "@handsal/db";
@@ -119,8 +120,13 @@ export async function createAdminUser(over: Partial<AdminUserCreateInput> = {}) 
   return { user, password };
 }
 
-export async function addMember(tenantId: string, adminUserId: string, role: TenantRole) {
-  await db.insert(tenantMembers).values({ tenantId, adminUserId, role });
+export async function addMember(
+  tenantId: string,
+  adminUserId: string,
+  role: TenantRole,
+  status: (typeof tenantMemberStatus.enumValues)[number] = "active",
+) {
+  await db.insert(tenantMembers).values({ tenantId, adminUserId, role, status });
 }
 
 /** Registers a fresh ES256 key for an application; returns the row and its private key. */

@@ -304,7 +304,16 @@ describe("POST /api/tenants", () => {
       .select()
       .from(tenantMembers)
       .where(eq(tenantMembers.tenantId, tenant.id));
-    expect(members).toEqual([{ tenantId: tenant.id, adminUserId: s.user.id, role: "owner" }]);
+    expect(members).toEqual([
+      {
+        tenantId: tenant.id,
+        adminUserId: s.user.id,
+        role: "owner",
+        status: "active",
+        invitedBy: null,
+        invitedAt: null,
+      },
+    ]);
     const keys = await db.select().from(signingKeys).where(eq(signingKeys.tenantId, tenant.id));
     expect(keys.map((k) => k.status)).toEqual(["active"]);
   });

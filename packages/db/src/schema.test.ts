@@ -371,4 +371,54 @@ describe("schema constraints", () => {
     for (const table of children) expect(await count(table), table).toBe(0);
     expect(await count("admin_users")).toBe(1);
   });
+
+  it("tenant_members.status is NOT NULL DEFAULT 'active'; an insert without it is active", async () => {
+    const { rows } = await pool.query(
+      `SELECT is_nullable, column_default, udt_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'tenant_members' AND column_name = 'status'`,
+    );
+    expect(rows).toEqual([
+      {
+        is_nullable: "NO",
+        column_default: "'active'::tenant_member_status",
+        udt_name: "tenant_member_status",
+      },
+    ]);
+
+    const tenant = await createTenant("tenant-a");
+    const [admin] = await db
+      .insert(adminUsers)
+      .values({ email: "a@example.com", passwordHash: "h", name: "A" })
+      .returning();
+    const [member] = await db
+      .insert(tenantMembers)
+      .values({ tenantId: tenant.id, adminUserId: admin.id, role: "admin" })
+      .returning();
+    expect(member).toMatchObject({ status: "active", invitedBy: null, invitedAt: null });
+  });
+
+  it("deleting the inviter keeps the invitee's membership and nulls invited_by", async () => {
+    const tenant = await createTenant("tenant-a");
+    const [inviter, invitee] = await db
+      .insert(adminUsers)
+      .values([
+        { email: "inviter@example.com", passwordHash: "h", name: "Inviter" },
+        { email: "invitee@example.com", passwordHash: "h", name: "Invitee" },
+      ])
+      .returning();
+    await db.insert(tenantMembers).values({
+      tenantId: tenant.id,
+      adminUserId: invitee.id,
+      role: "admin",
+      status: "pending",
+      invitedBy: inviter.id,
+      invitedAt: new Date(),
+    });
+
+    await db.delete(adminUsers).where(eq(adminUsers.id, inviter.id));
+
+    const rows = await db.select().from(tenantMembers);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ adminUserId: invitee.id, status: "pending", invitedBy: null });
+  });
 });

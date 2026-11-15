@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { pool, runMigrations } from "@handsal/db";
+import { db, pool, runMigrations, tenantMembers } from "@handsal/db";
+import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { app } from "../app.js";
 import { addMember, createAdminUser, createTenant, truncateAll } from "../test/factories.js";
+import { jsonRequest, loginAs } from "../test/helpers.js";
 import {
   type AdminEnv,
   createAdminAuth,
@@ -75,5 +78,34 @@ describe('requireTenantAccess("admin")', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ role: "owner" });
     expect((await asUser(user.id, randomUUID())).status).toBe(404);
+  });
+});
+
+describe("pending membership (invited, not accepted)", () => {
+  it("grants nothing until the row turns active", async () => {
+    const tenant = await createTenant();
+    const { user, password } = await createAdminUser();
+    await addMember(tenant.id, user.id, "owner", "pending");
+    const { cookie } = await loginAs(app, user.email, password);
+    const get = async (path: string) => {
+      const res = await jsonRequest(app, "GET", path, undefined, { cookie });
+      return { status: res.status, body: await res.json() };
+    };
+    const listed = [expect.objectContaining({ id: tenant.id })];
+
+    const pending = await get(`/api/tenants/${tenant.id}`);
+    expect([pending.status, pending.body.error]).toEqual([404, "tenant_not_found"]);
+    expect((await get("/api/auth/me")).body.tenants).toEqual([]);
+    expect((await get("/api/tenants")).body).toEqual([]);
+
+    await db
+      .update(tenantMembers)
+      .set({ status: "active" })
+      .where(and(eq(tenantMembers.tenantId, tenant.id), eq(tenantMembers.adminUserId, user.id)));
+
+    const active = await get(`/api/tenants/${tenant.id}`);
+    expect([active.status, active.body.role]).toEqual([200, "owner"]);
+    expect((await get("/api/auth/me")).body.tenants).toEqual(listed);
+    expect((await get("/api/tenants")).body).toEqual(listed);
   });
 });

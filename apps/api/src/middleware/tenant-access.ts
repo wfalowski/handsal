@@ -12,8 +12,9 @@ const ROLE_RANK: Record<TenantRole, number> = { auditor: 0, admin: 1, owner: 2 }
 const tenantNotFound = () => new ApiError(404, "tenant_not_found", "Tenant not found");
 
 /**
- * Guards routes with `:tenantId`. Super-admins act as `owner`; others need a
- * `tenant_members` row. Missing tenant and non-member both 404 (existence is not revealed);
+ * Guards routes with `:tenantId`. Super-admins act as `owner`; others need an `active`
+ * `tenant_members` row (`pending` = invited, not accepted, grants nothing). Missing tenant,
+ * non-member and pending member all 404 (existence is not revealed);
  * a role below `minRole` is 403. Sets `c.var.tenantRole`. Runs after `adminAuth`.
  */
 export function requireTenantAccess(minRole: TenantRole): MiddlewareHandler<AdminEnv> {

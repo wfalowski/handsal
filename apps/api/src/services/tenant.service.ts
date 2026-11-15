@@ -65,8 +65,9 @@ export async function getTenantById(id: string): Promise<Tenant | null> {
 }
 
 /**
- * Tenants with dashboard counters. `memberUserId` limits the list to that user's memberships
- * (with their role); omit it for the super-admin view (every tenant as `owner`).
+ * Tenants with dashboard counters. `memberUserId` limits the list to that user's `active`
+ * memberships (with their role; `pending` invitations excluded); omit it for the super-admin
+ * view (every tenant as `owner`).
  * One grouped subquery per counter, left-joined: no N+1.
  */
 export async function listTenantsWithStats(memberUserId?: string): Promise<TenantListItem[]> {
@@ -108,7 +109,11 @@ export async function listTenantsWithStats(memberUserId?: string): Promise<Tenan
   const rows = await (memberUserId
     ? base.innerJoin(
         tenantMembers,
-        and(eq(tenantMembers.tenantId, tenants.id), eq(tenantMembers.adminUserId, memberUserId)),
+        and(
+          eq(tenantMembers.tenantId, tenants.id),
+          eq(tenantMembers.adminUserId, memberUserId),
+          eq(tenantMembers.status, "active"),
+        ),
       )
     : base
   ).orderBy(asc(tenants.name));
@@ -144,9 +149,12 @@ export async function createTenant(
       });
     await ensureActiveKey(tenant.id, tx);
     if (creatorUserId) {
-      await tx
-        .insert(tenantMembers)
-        .values({ tenantId: tenant.id, adminUserId: creatorUserId, role: "owner" });
+      await tx.insert(tenantMembers).values({
+        tenantId: tenant.id,
+        adminUserId: creatorUserId,
+        role: "owner",
+        status: "active",
+      });
     }
     return tenant;
   });

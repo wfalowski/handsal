@@ -57,6 +57,13 @@
       "when": 1794067007313,
       "tag": "0007_admin_session_version",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794765908823,
+      "tag": "0008_member_status",
+      "breakpoints": true
     }
   ]
 }

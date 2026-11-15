@@ -80,7 +80,16 @@ describe("createTenant", () => {
       .select()
       .from(tenantMembers)
       .where(eq(tenantMembers.tenantId, tenant.id));
-    expect(members).toEqual([{ tenantId: tenant.id, adminUserId: user.id, role: "owner" }]);
+    expect(members).toEqual([
+      {
+        tenantId: tenant.id,
+        adminUserId: user.id,
+        role: "owner",
+        status: "active",
+        invitedBy: null,
+        invitedAt: null,
+      },
+    ]);
   });
 
   it("without a creator adds no membership", async () => {
@@ -127,6 +136,22 @@ describe("listTenantsWithStats", () => {
     expect(mine).toHaveLength(1);
     expect(mine[0]).toMatchObject({ id: a.id, role: "auditor", appCount: 2 });
     expect(b.id).not.toBe(mine[0].id);
+  });
+
+  it("skips a pending membership until it turns active", async () => {
+    const { user } = await createAdminUser();
+    const t = await createTenantRow({ name: "A" });
+    await addMember(t.id, user.id, "admin", "pending");
+
+    expect(await listTenantsWithStats(user.id)).toEqual([]);
+    expect(await listTenantsWithStats()).toHaveLength(1);
+
+    await db
+      .update(tenantMembers)
+      .set({ status: "active" })
+      .where(eq(tenantMembers.adminUserId, user.id));
+    const mine = await listTenantsWithStats(user.id);
+    expect(mine.map((r) => [r.id, r.role])).toEqual([[t.id, "admin"]]);
   });
 });
 
