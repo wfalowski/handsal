@@ -1,3 +1,9 @@
+## [0.3.0](https://github.com/wfalowski/handsal/compare/v0.2.0...v0.3.0) (2026-11-15)
+
+### Features
+
+* add an optional tokenUrl to createHandsalClient (DEV-591) ([99fa377](https://github.com/wfalowski/handsal/commit/99fa377f1889350e9730a963cd6dbbd716691d72))
+
 ## [0.2.0](https://github.com/wfalowski/handsal/compare/v0.1.0...v0.2.0) (2026-11-12)
 
 ### Features
