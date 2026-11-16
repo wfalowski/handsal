@@ -1,4 +1,5 @@
 import type { ApplicationDto } from "@handsal/shared";
+import { REQUEST_SCOPES_MAX } from "@handsal/shared/constants";
 import { useId, useState } from "react";
 import type { GrantView } from "../lib/queries";
 import { Button } from "./Button";
@@ -30,12 +31,14 @@ export function CurlSnippet({ tokenEndpoint, clientId, authMethod, grants }: Pro
   const grant = grants[index] ?? grants[0];
   const resource = grant?.resource.audience;
   const scopes = grant?.scopes.map((s) => s.name) ?? [];
+  // The API rejects more than REQUEST_SCOPES_MAX scopes; omitting `scope` yields every granted scope.
+  const omitScope = scopes.length > REQUEST_SCOPES_MAX;
   const lines = [
     `curl -X POST ${tokenEndpoint}`,
     ...AUTH_LINES[authMethod](clientId),
     "-d grant_type=client_credentials",
     ...(resource ? [`-d resource=${encodeURIComponent(resource)}`] : []),
-    ...(scopes.length ? [`-d scope="${scopes.join(" ")}"`] : []),
+    ...(scopes.length && !omitScope ? [`-d scope="${scopes.join(" ")}"`] : []),
   ];
   const text = lines.join(" \\\n  ");
 
@@ -77,6 +80,12 @@ export function CurlSnippet({ tokenEndpoint, clientId, authMethod, grants }: Pro
             ))}
           </select>
         </div>
+      )}
+      {omitScope && (
+        <p className="m-0 text-[#A1A1AA] text-xs">
+          This grant has more than {REQUEST_SCOPES_MAX} scopes, so the example omits{" "}
+          <code>scope</code>, which requests every scope granted on the resource.
+        </p>
       )}
       <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[#D4D4D8] text-xs leading-[1.65]">
         {text}

@@ -34,3 +34,8 @@ export const AGENT_MAX_SCOPES_MAX = 50;
 export const AGENT_BUDGET_MIN = 1;
 export const AGENT_BUDGET_MAX = 100000;
 export const AGENT_CIDRS_MAX = 20;
+
+// Cap on the space-separated `scope` of a token request; also caps the scopes stored on a denied
+// event built from the raw request. Element length matches SCOPE_NAME_REGEX.
+export const REQUEST_SCOPES_MAX = 50;
+export const REQUEST_SCOPE_LENGTH_MAX = 128;

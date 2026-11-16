@@ -1,12 +1,31 @@
 import { z } from "zod";
+import { REQUEST_SCOPE_LENGTH_MAX, REQUEST_SCOPES_MAX } from "../constants/defaults.js";
 import { TOKEN_TYPE_URNS } from "../constants/oauth.js";
 import { TASK_ID_REGEX } from "../constants/regex.js";
 import { approvalRequestExtraSchema } from "./approval.schema.js";
 
+// Space-separated `scope` (RFC 6749 §3.3), split the way the token route splits it. The length bound
+// (50 max-length scopes plus separators) rejects whitespace padding before the split.
+const requestScopeSchema = z
+  .string()
+  .max(REQUEST_SCOPES_MAX * (REQUEST_SCOPE_LENGTH_MAX + 1))
+  .refine(
+    (value) => {
+      const scopes = value.split(" ").filter(Boolean);
+      return (
+        scopes.length <= REQUEST_SCOPES_MAX &&
+        scopes.every((scope) => scope.length <= REQUEST_SCOPE_LENGTH_MAX)
+      );
+    },
+    {
+      message: `At most ${REQUEST_SCOPES_MAX} scopes of up to ${REQUEST_SCOPE_LENGTH_MAX} characters`,
+    },
+  );
+
 // Form fields are strings; the route (not the schema) decides unsupported_grant_type.
 export const tokenRequestSchema = z.object({
   grant_type: z.string(),
-  scope: z.string().optional(),
+  scope: requestScopeSchema.optional(),
   resource: z.string().min(1).max(512),
   client_id: z.string().optional(),
   client_secret: z.string().optional(),
@@ -22,7 +41,7 @@ export const tokenExchangeSchema = z.object({
   subject_token: z.string().min(1).max(8192),
   subject_token_type: z.enum([TOKEN_TYPE_URNS.ACCESS_TOKEN, TOKEN_TYPE_URNS.JWT]),
   resource: z.string().min(1).max(512),
-  scope: z.string().max(4096).optional(),
+  scope: requestScopeSchema.optional(),
   task_id: z.string().regex(TASK_ID_REGEX).optional(),
   actor_token: z.never().optional(),
   actor_token_type: z.never().optional(),

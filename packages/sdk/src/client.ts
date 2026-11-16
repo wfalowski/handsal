@@ -38,7 +38,10 @@ export interface HandsalClientOptions {
   clientSecret: string;
   /** Audience of the API this client calls. Sent as `resource`. */
   resource: string;
-  /** One scope or a list. Omitted: the server returns every scope granted on `resource`. */
+  /**
+   * One scope or a list, at most 50 scopes of at most 128 chars each (more is `400 invalid_request`).
+   * Omitted: the server returns every scope granted on `resource`.
+   */
   scope?: string | readonly string[];
   /**
    * Must match the application's registered method. The default is HTTP Basic.

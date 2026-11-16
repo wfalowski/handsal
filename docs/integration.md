@@ -19,7 +19,7 @@ Two roles are involved. A **service** (client) obtains an access token from Hand
 |---|---|---|
 | `grant_type` | yes | `client_credentials` |
 | `resource` | yes | The audience of the API you are calling. Exactly one. Must be a resource your application has at least one granted scope on. |
-| `scope` | no | Space-separated subset of the scopes granted on that resource. Omitted: all granted scopes on that resource. |
+| `scope` | no | Space-separated subset of the scopes granted on that resource, at most 50 scopes of at most 128 characters each; more, or a longer one, is `400 invalid_request`. Omitted: all granted scopes on that resource. |
 | client credentials | yes | HTTP Basic (`client_secret_basic`, the default) or `client_id` + `client_secret` in the body (`client_secret_post`), or a signed assertion (`private_key_jwt`, see [section 5](#5-authenticating-with-private_key_jwt)). Use the method registered for the application; the others are rejected with `invalid_client`. Never send two methods at once. |
 
 Response: `{"access_token":"<jwt>","token_type":"Bearer","expires_in":3600,"scope":"orders:read"}` with `Cache-Control: no-store`.

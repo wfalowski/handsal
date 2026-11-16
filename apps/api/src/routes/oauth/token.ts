@@ -4,6 +4,9 @@ import {
   DEFAULTS,
   GRANT_TYPES,
   OAUTH_ERRORS,
+  REQUEST_SCOPE_LENGTH_MAX,
+  REQUEST_SCOPES_MAX,
+  TASK_ID_REGEX,
   tokenExchangeSchema,
   tokenRequestSchema,
 } from "@handsal/shared";
@@ -104,6 +107,14 @@ export async function authenticateFormClient(
 
 function splitScopes(scope: string | undefined): string[] {
   return scope?.split(" ").filter(Boolean) ?? [];
+}
+
+// Scopes of a denied event taken from the raw (maybe unauthenticated) body. A longer element cannot be a valid
+// scope name, so it is dropped rather than truncated into a name that does not exist.
+function untrustedEventScopes(scope: string | undefined): string[] {
+  return splitScopes(scope)
+    .filter((s) => s.length <= REQUEST_SCOPE_LENGTH_MAX)
+    .slice(0, REQUEST_SCOPES_MAX);
 }
 
 /**
@@ -246,9 +257,9 @@ export function createTokenRoutes({
             audience: (err.eventTarget?.audience ?? body?.resource)?.slice(0, 512) ?? null,
             outcome: "denied",
             reason: (err.reason ?? err.errorCode).slice(0, 64),
-            scopes: err.eventTarget?.scopes ?? splitScopes(body?.scope),
+            scopes: err.eventTarget?.scopes ?? untrustedEventScopes(body?.scope),
             sourceIp: sourceIp.slice(0, 45),
-            taskId: body?.task_id?.slice(0, 128) ?? null,
+            taskId: body?.task_id && TASK_ID_REGEX.test(body.task_id) ? body.task_id : null,
           });
         }
         throw err;

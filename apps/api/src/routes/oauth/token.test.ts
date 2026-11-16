@@ -6,6 +6,7 @@ import {
   scopes as scopesTable,
   tokenEvents,
 } from "@handsal/db";
+import { REQUEST_SCOPE_LENGTH_MAX, REQUEST_SCOPES_MAX } from "@handsal/shared";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { decodeJwt, decodeProtectedHeader } from "jose";
@@ -65,6 +66,10 @@ function tokenUrl(slug: string) {
 
 async function events() {
   return db.select().from(tokenEvents);
+}
+
+async function truncateEvents() {
+  await db.delete(tokenEvents);
 }
 
 beforeAll(async () => {
@@ -357,6 +362,70 @@ describe("POST /t/:slug/oauth/token", () => {
       await expectDenied(res, 401, "invalid_client", "invalid_client");
     });
 
+    it("unauthenticated flood of scopes → the denied event keeps at most 50", async () => {
+      const { tenant } = await setup();
+      const scope = Array.from({ length: 5000 }, () => "s").join(" ");
+      const res = await formRequest(app, tokenUrl(tenant.slug), {
+        grant_type: "client_credentials",
+        resource: PAYMENTS,
+        scope,
+      });
+      await expectDenied(res, 401, "invalid_client", "invalid_client");
+      expect((await events())[0].scopes).toHaveLength(REQUEST_SCOPES_MAX);
+      // Rejected before client auth (missing grant_type): same cap.
+      await truncateEvents();
+      const noGrant = await formRequest(app, tokenUrl(tenant.slug), { resource: PAYMENTS, scope });
+      await expectDenied(noGrant, 400, "invalid_request", "invalid_request");
+      expect((await events())[0].scopes).toHaveLength(REQUEST_SCOPES_MAX);
+    });
+
+    it("unauthenticated over-long scope element is dropped from the denied event", async () => {
+      const { tenant } = await setup();
+      const res = await formRequest(app, tokenUrl(tenant.slug), {
+        grant_type: "client_credentials",
+        resource: PAYMENTS,
+        scope: `${"x".repeat(200)} payments:read`,
+      });
+      await expectDenied(res, 401, "invalid_client", "invalid_client", {
+        scopes: ["payments:read"],
+      });
+      // Dropped before the 50 cap: 51 over-long elements cannot push out the valid one.
+      await truncateEvents();
+      const padded = await formRequest(app, tokenUrl(tenant.slug), {
+        grant_type: "client_credentials",
+        resource: PAYMENTS,
+        scope: `${Array.from({ length: REQUEST_SCOPES_MAX + 1 }, () => "x".repeat(130)).join(" ")} payments:read`,
+      });
+      await expectDenied(padded, 401, "invalid_client", "invalid_client", {
+        scopes: ["payments:read"],
+      });
+    });
+
+    it("more than 50 scopes or a scope over 128 chars → invalid_request, capped event", async () => {
+      const { tenant, auth } = await setup();
+      const many = Array.from({ length: REQUEST_SCOPES_MAX + 1 }, (_, i) => `s${i}`);
+      const res = await formRequest(
+        app,
+        tokenUrl(tenant.slug),
+        { grant_type: "client_credentials", resource: PAYMENTS, scope: many.join(" ") },
+        auth,
+      );
+      await expectDenied(res, 400, "invalid_request", "invalid_request", {
+        scopes: many.slice(0, REQUEST_SCOPES_MAX),
+      });
+      await truncateEvents();
+      const long = "x".repeat(REQUEST_SCOPE_LENGTH_MAX + 1);
+      const longRes = await formRequest(
+        app,
+        tokenUrl(tenant.slug),
+        { grant_type: "client_credentials", resource: PAYMENTS, scope: `payments:read ${long}` },
+        auth,
+      );
+      await expectDenied(longRes, 400, "invalid_request", "invalid_request", {
+        scopes: ["payments:read"],
+      });
+    });
+
     it("basic-registered client sending the secret in the body → auth_method_mismatch", async () => {
       const { tenant, application, clientSecret } = await setup();
       const res = await formRequest(app, tokenUrl(tenant.slug), {
@@ -615,7 +684,7 @@ describe("task_id passthrough", () => {
     expect(rows.map((r) => r.taskId)).toEqual(["run-42", null]);
   });
 
-  it("task_id over 128 chars → invalid_request; a denied event keeps a truncated task_id", async () => {
+  it("task_id over 128 chars → invalid_request; a denied event stores a malformed task_id as null", async () => {
     const { tenant, auth } = await setup();
     const long = "t".repeat(129);
     const res = await formRequest(
@@ -635,9 +704,34 @@ describe("task_id passthrough", () => {
     expect(denied.status).toBe(400);
     const rows = await db.select().from(tokenEvents).orderBy(tokenEvents.id);
     expect(rows.map((r) => [r.outcome, r.taskId])).toEqual([
-      ["denied", long.slice(0, 128)],
+      ["denied", null],
       ["denied", "run-1"],
     ]);
+  });
+});
+
+describe("trusted event scopes are not capped", () => {
+  it("scope omitted with more than 50 granted → issued event lists every granted scope", async () => {
+    const tenant = await createTenant();
+    const { application, clientSecret } = await createApplication(tenant.id);
+    const names = Array.from({ length: REQUEST_SCOPES_MAX + 10 }, (_, i) => `bulk:${i}`);
+    const { scopes } = await createResourceWithScopes(tenant.id, PAYMENTS, names);
+    await grant(
+      tenant.id,
+      application.id,
+      scopes.map((s) => s.id),
+    );
+    const res = await formRequest(
+      app,
+      tokenUrl(tenant.slug),
+      { grant_type: "client_credentials", resource: PAYMENTS },
+      { Authorization: basic(application.clientId, clientSecret) },
+    );
+    expect(res.status).toBe(200);
+    const rows = await events();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe("issued");
+    expect([...rows[0].scopes].sort()).toEqual([...names].sort());
   });
 });
 
@@ -942,6 +1036,18 @@ describe("token exchange grant", () => {
     });
     const noResource = await s.exchange({ actor_token: "x", resource: "" });
     expect((await noResource.json()).error).toBe("invalid_request");
+  });
+
+  it("more than 50 scopes → invalid_request, capped denied event", async () => {
+    const s = await exchangeSetup();
+    const many = Array.from({ length: REQUEST_SCOPES_MAX + 1 }, (_, i) => `s${i}`);
+    const res = await s.exchange({ scope: many.join(" ") });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe("invalid_request");
+    const rows = (await events()).filter((e) => e.outcome === "denied");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ outcome: "denied", reason: "invalid_request" });
+    expect(rows[0].scopes).toHaveLength(REQUEST_SCOPES_MAX);
   });
 
   it("unknown subject_token_type → invalid_request", async () => {

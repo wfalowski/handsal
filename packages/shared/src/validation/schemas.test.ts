@@ -5,6 +5,8 @@ import {
   CLIENT_ID_REGEX,
   DEFAULTS,
   GRANT_TYPES,
+  REQUEST_SCOPE_LENGTH_MAX,
+  REQUEST_SCOPES_MAX,
   TOKEN_TYPE_URNS,
 } from "../constants/index.js";
 import {
@@ -264,6 +266,34 @@ describe("oauth requests", () => {
     expect(ok(tokenExchangeSchema, { ...base, resource: undefined })).toBe(false);
     expect(ok(tokenExchangeSchema, { ...base, actor_token: "x" })).toBe(false);
     expect(ok(tokenExchangeSchema, { ...base, actor_token_type: TOKEN_TYPE_URNS.JWT })).toBe(false);
+  });
+  it("scope: at most 50 elements of at most 128 chars, in both token schemas", () => {
+    const exchangeBase = {
+      subject_token: "a.b.c",
+      subject_token_type: TOKEN_TYPE_URNS.ACCESS_TOKEN,
+      resource: "https://api",
+    };
+    const tokenBase = { grant_type: "client_credentials", resource: "https://api" };
+    const list = (n: number) => Array.from({ length: n }, (_, i) => `s${i}`).join(" ");
+    for (const [schema, base] of [
+      [tokenRequestSchema, tokenBase],
+      [tokenExchangeSchema, exchangeBase],
+    ] as const) {
+      expect(ok(schema, { ...base, scope: list(REQUEST_SCOPES_MAX) })).toBe(true);
+      expect(ok(schema, { ...base, scope: ` ${list(REQUEST_SCOPES_MAX)}  ` })).toBe(true);
+      expect(ok(schema, { ...base, scope: list(REQUEST_SCOPES_MAX + 1) })).toBe(false);
+      expect(ok(schema, { ...base, scope: `a${" ".repeat(10_000)}b` })).toBe(false);
+      expect(ok(schema, { ...base, scope: "a".repeat(REQUEST_SCOPE_LENGTH_MAX) })).toBe(true);
+      // 50 full-length scopes with separators (6449 chars) must pass the string length cap too.
+      const full = Array.from({ length: REQUEST_SCOPES_MAX }, (_, i) =>
+        `${i}`.padEnd(REQUEST_SCOPE_LENGTH_MAX, "a"),
+      ).join(" ");
+      expect(full).toHaveLength(REQUEST_SCOPES_MAX * (REQUEST_SCOPE_LENGTH_MAX + 1) - 1);
+      expect(ok(schema, { ...base, scope: full })).toBe(true);
+      expect(ok(schema, { ...base, scope: `b ${"a".repeat(REQUEST_SCOPE_LENGTH_MAX + 1)}` })).toBe(
+        false,
+      );
+    }
   });
   it("introspect requires token", () => {
     expect(ok(introspectRequestSchema, { token: "t", token_type_hint: "access_token" })).toBe(true);
