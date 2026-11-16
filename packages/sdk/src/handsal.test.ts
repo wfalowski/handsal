@@ -1,5 +1,5 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTPayload, SignJWT } from "jose";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHandsal, type HandsalAccessToken, HandsalError } from "./handsal.js";
 
 function b64url(value: string): string {
@@ -51,10 +51,154 @@ async function expectInvalid(run: Promise<unknown>) {
   await expect(run).rejects.toMatchObject({ status: 401, code: "invalid_token" });
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("createHandsal", () => {
   it("requires an issuer and an audience", () => {
     expect(() => createHandsal({ issuer: "  ", audience: AUDIENCE })).toThrow(/issuer/);
     expect(() => createHandsal({ issuer: ISSUER, audience: " " })).toThrow(/audience/);
+  });
+
+  it("rejects an http jwksUri on another host without an option", () => {
+    expect(() =>
+      createHandsal({
+        issuer: ISSUER,
+        audience: AUDIENCE,
+        jwksUri: "http://evil.example/jwks.json",
+      }),
+    ).toThrow(/jwksUri/);
+    // Checked on the getKey path too.
+    expect(() =>
+      createHandsal({
+        issuer: ISSUER,
+        audience: AUDIENCE,
+        getKey,
+        jwksUri: "http://evil.example/jwks.json",
+      }),
+    ).toThrow(/jwksUri/);
+  });
+
+  it("requires https for jwksUri unless loopback or allowInsecureHttp", () => {
+    const base = { issuer: ISSUER, audience: AUDIENCE, allowCrossOrigin: true };
+    const jwksUri = "http://keys.example.net/jwks.json";
+    expect(() => createHandsal({ ...base, jwksUri })).toThrow("Handsal jwksUri is invalid");
+    expect(() => createHandsal({ ...base, jwksUri })).toThrow(/allowInsecureHttp/);
+    expect(() => createHandsal({ ...base, jwksUri, allowInsecureHttp: true })).not.toThrow();
+    // A name that only starts like 127.0.0.0/8 is not loopback.
+    expect(() => createHandsal({ ...base, jwksUri: "http://127.evil.com/jwks.json" })).toThrow(
+      /allowInsecureHttp/,
+    );
+    expect(() =>
+      createHandsal({ ...base, jwksUri: "https://keys.example.net/jwks.json" }),
+    ).not.toThrow();
+  });
+
+  it("requires jwksUri on the issuer's host and port unless allowCrossOrigin", () => {
+    const base = { issuer: ISSUER, audience: AUDIENCE, getKey };
+    expect(() =>
+      createHandsal({ ...base, jwksUri: "https://auth.example.com/t/acme/keys.json" }),
+    ).not.toThrow();
+    expect(() =>
+      createHandsal({ ...base, jwksUri: "https://auth.example.com:443/t/acme/keys.json" }),
+    ).not.toThrow();
+    for (const jwksUri of [
+      "https://keys.example.net/jwks.json",
+      "https://auth.example.com:8443/t/acme/keys.json",
+    ]) {
+      expect(() => createHandsal({ ...base, jwksUri })).toThrow(/jwksUri.*allowCrossOrigin/);
+      expect(() => createHandsal({ ...base, jwksUri, allowCrossOrigin: true })).not.toThrow();
+    }
+  });
+
+  it("needs both options for an http container address next to an https issuer", () => {
+    const base = { issuer: ISSUER, audience: AUDIENCE };
+    const jwksUri = "http://handsal:3000/t/acme/.well-known/jwks.json";
+    expect(() => createHandsal({ ...base, jwksUri, allowInsecureHttp: true })).toThrow(
+      /allowCrossOrigin/,
+    );
+    expect(() => createHandsal({ ...base, jwksUri, allowCrossOrigin: true })).toThrow(
+      /allowInsecureHttp/,
+    );
+    expect(() =>
+      createHandsal({ ...base, jwksUri, allowInsecureHttp: true, allowCrossOrigin: true }),
+    ).not.toThrow();
+  });
+
+  it("requires an https issuer unless loopback or allowInsecureHttp", () => {
+    const issuer = "http://auth.example.com/t/acme";
+    expect(() => createHandsal({ issuer, audience: AUDIENCE, getKey })).toThrow(
+      /issuer.*allowInsecureHttp/,
+    );
+    expect(() =>
+      createHandsal({ issuer, audience: AUDIENCE, getKey, allowInsecureHttp: true }),
+    ).not.toThrow();
+    for (const loopback of [
+      "http://localhost:3000/t/acme",
+      "http://api.localhost:3000/t/acme",
+      "http://127.0.0.1:3000/t/acme",
+      "http://[::1]:3000/t/acme",
+    ]) {
+      expect(() => createHandsal({ issuer: loopback, audience: AUDIENCE })).not.toThrow();
+    }
+    expect(() =>
+      createHandsal({
+        issuer: "http://api.localhost:3000/t/acme",
+        audience: AUDIENCE,
+        jwksUri: "http://api.localhost:3000/t/acme/.well-known/jwks.json",
+      }),
+    ).not.toThrow();
+    expect(() => createHandsal({ issuer: "not a url", audience: AUDIENCE })).toThrow(
+      "Handsal issuer is invalid",
+    );
+    // The issuer rule is not replaced by a cross-origin jwksUri.
+    const message = (() => {
+      try {
+        createHandsal({
+          issuer: "http://handsal.internal/t/acme",
+          audience: AUDIENCE,
+          jwksUri: "https://keys.example.net/jwks.json",
+          allowCrossOrigin: true,
+        });
+      } catch (error) {
+        return (error as Error).message;
+      }
+      return "";
+    })();
+    expect(message).toMatch(/issuer.*allowInsecureHttp/);
+    expect(message).not.toMatch(/jwksUri/);
+  });
+
+  it("rejects userinfo and non-http schemes even with both options", () => {
+    const base = { audience: AUDIENCE, allowInsecureHttp: true, allowCrossOrigin: true };
+    expect(() =>
+      createHandsal({ ...base, issuer: "https://evil.example@auth.example.com/t/acme" }),
+    ).toThrow(/issuer.*username or password/);
+    expect(() =>
+      createHandsal({
+        ...base,
+        issuer: ISSUER,
+        jwksUri: "https://evil.example@auth.example.com/jwks.json",
+      }),
+    ).toThrow(/jwksUri.*username or password/);
+    expect(() => createHandsal({ ...base, issuer: ISSUER, jwksUri: "file:///etc/passwd" })).toThrow(
+      "Handsal jwksUri is invalid",
+    );
+    expect(() => createHandsal({ ...base, issuer: "file:///etc/passwd" })).toThrow(
+      "Handsal issuer is invalid",
+    );
+  });
+
+  it("treats a blank jwksUri as absent and fetches the derived key set", async () => {
+    const token = await sign();
+    for (const jwksUri of ["", "   "]) {
+      const fetchImpl = vi.fn(async (..._args: unknown[]) => Response.json({ keys: [jwk] }));
+      vi.stubGlobal("fetch", fetchImpl);
+      const auth = createHandsal({ issuer: ISSUER, audience: AUDIENCE, jwksUri });
+      await expect(auth.authenticate(`Bearer ${token}`)).resolves.toMatchObject({ iss: ISSUER });
+      expect(String(fetchImpl.mock.calls[0]?.[0])).toBe(`${ISSUER}/.well-known/jwks.json`);
+    }
   });
 
   it("verifies an ES256 at+jwt for this issuer and audience", async () => {

@@ -1,3 +1,5 @@
+import { checkUrl } from "./url-policy.js";
+
 /** A cached client-credentials token. `expiresAt` is Unix milliseconds. */
 export interface HandsalClientToken {
   accessToken: string;
@@ -10,14 +12,28 @@ export interface HandsalClientOptions {
   /**
    * Tenant issuer, for example `https://auth.example.com/t/acme`. A trailing slash is ignored.
    * The token endpoint is `${issuer}/oauth/token` unless `tokenUrl` replaces it.
+   * Must be an absolute https URL, or http on a loopback host (`localhost`, `*.localhost`,
+   * `127.0.0.0/8`, `::1`) unless `allowInsecureHttp` is set. Checked even when `tokenUrl` is set.
    */
   issuer: string;
   /**
    * Full token endpoint URL, used as given instead of `${issuer}/oauth/token`.
-   * The client credentials are sent to this host, so point it only at a host you trust.
+   * The client credentials are sent to this host, so it must be https (or loopback, or
+   * `allowInsecureHttp`) on the same host and port as `issuer`, unless `allowCrossOrigin` is set.
    * Blank means not set.
    */
   tokenUrl?: string;
+  /**
+   * Accept `http:` for `issuer` and `tokenUrl` on any host, not only loopback. The secret then
+   * travels in clear text. Other schemes and a username or password in the URL are always
+   * rejected.
+   */
+  allowInsecureHttp?: boolean;
+  /**
+   * Accept a `tokenUrl` whose host or port differs from `issuer`, such as a gateway.
+   * The client secret is sent there, so allow it only for a host you trust.
+   */
+  allowCrossOrigin?: boolean;
   clientId: string;
   clientSecret: string;
   /** Audience of the API this client calls. Sent as `resource`. */
@@ -90,19 +106,6 @@ function required(value: string | undefined, label: string): string {
   return trimmed;
 }
 
-function tokenUrlParam(value: string | undefined): string | undefined {
-  const trimmed = value?.trim() ?? "";
-  if (trimmed === "") return undefined;
-  let protocol: string;
-  try {
-    protocol = new URL(trimmed).protocol;
-  } catch {
-    throw new Error("Handsal tokenUrl is invalid");
-  }
-  if (protocol !== "https:" && protocol !== "http:") throw new Error("Handsal tokenUrl is invalid");
-  return trimmed;
-}
-
 function scopeParam(scope: HandsalClientOptions["scope"]): string | undefined {
   if (scope === undefined) return undefined;
   const parts = (typeof scope === "string" ? scope.split(/\s+/) : scope)
@@ -139,7 +142,9 @@ export function createHandsalClient(options: HandsalClientOptions): HandsalClien
   const clientSecret = required(options.clientSecret, "clientSecret");
   const resource = required(options.resource, "resource");
   if (resource.length > 512) throw new Error("Handsal resource is too long");
-  const tokenUrl = tokenUrlParam(options.tokenUrl);
+  const issuerUrl = checkUrl("issuer", issuer, options);
+  const tokenUrl = options.tokenUrl?.trim() || undefined;
+  if (tokenUrl !== undefined) checkUrl("tokenUrl", tokenUrl, options, issuerUrl);
   const scope = scopeParam(options.scope);
   const authentication = options.authentication ?? "client_secret_basic";
   if (authentication !== "client_secret_basic" && authentication !== "client_secret_post") {

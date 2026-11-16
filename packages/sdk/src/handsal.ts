@@ -1,4 +1,5 @@
 import { createRemoteJWKSet, errors, type JWTPayload, type JWTVerifyGetKey, jwtVerify } from "jose";
+import { checkUrl } from "./url-policy.js";
 
 /** Claims Handsal puts on an access token, plus `scopes` split from `scope`. */
 export interface HandsalAccessToken {
@@ -23,14 +24,32 @@ export interface HandsalAccessToken {
 }
 
 export interface HandsalOptions {
-  /** Tenant issuer. Exact `iss`, for example `https://auth.example.com/t/acme`. */
+  /**
+   * Tenant issuer. Exact `iss`, for example `https://auth.example.com/t/acme`.
+   * Must be an absolute https URL, or http on a loopback host (`localhost`, `*.localhost`,
+   * `127.0.0.0/8`, `::1`) unless `allowInsecureHttp` is set.
+   */
   issuer: string;
   /** This API's audience. A token for another audience is rejected. */
   audience: string;
-  /** Defaults to `${issuer}/.well-known/jwks.json`. */
+  /**
+   * Defaults to `${issuer}/.well-known/jwks.json`. Blank means not set. Checked even when
+   * `getKey` is set: https (or loopback, or `allowInsecureHttp`), and the same host and port as
+   * `issuer` unless `allowCrossOrigin` is set.
+   */
   jwksUri?: string;
   /** Replaces the remote JWKS lookup. Tests pass a local key set. */
   getKey?: JWTVerifyGetKey;
+  /**
+   * Accept `http:` for `issuer` and `jwksUri` on any host, not only loopback. Other schemes
+   * and a username or password in the URL are always rejected.
+   */
+  allowInsecureHttp?: boolean;
+  /**
+   * Accept a `jwksUri` whose host or port differs from `issuer`. The key set decides which
+   * tokens pass, so allow it only for a host you trust.
+   */
+  allowCrossOrigin?: boolean;
 }
 
 export interface ProtectOptions {
@@ -217,9 +236,12 @@ export function createHandsal(options: HandsalOptions): Handsal {
     throw new Error("Handsal audience is required");
   }
   const audience = options.audience;
+  const issuerUrl = checkUrl("issuer", issuer, options);
+  const jwksUri = options.jwksUri?.trim() ?? "";
+  if (jwksUri !== "") checkUrl("jwksUri", jwksUri, options, issuerUrl);
   const getKey =
     options.getKey ??
-    createRemoteJWKSet(new URL(options.jwksUri ?? `${issuer}/.well-known/jwks.json`));
+    createRemoteJWKSet(new URL(jwksUri !== "" ? jwksUri : `${issuer}/.well-known/jwks.json`));
 
   async function authenticate(
     input: Request | string | null | undefined,

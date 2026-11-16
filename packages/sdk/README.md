@@ -23,7 +23,14 @@ export const handsal = createHandsal({
 });
 ```
 
-The check is local. The package fetches the tenant JWKS and verifies the ES256 `at+jwt` signature, issuer, audience, expiry, and scopes. The client calls the token endpoint and caches the bearer token. The endpoint is `${issuer}/oauth/token` unless you pass a full `tokenUrl`, for example `tokenUrl: "https://gateway.example.net/oauth2/token"`; the client id and secret go to that host, so use only a host you trust. It depends on `jose`.
+The check is local. The package fetches the tenant JWKS and verifies the ES256 `at+jwt` signature, issuer, audience, expiry, and scopes. The client calls the token endpoint and caches the bearer token. The endpoint is `${issuer}/oauth/token` unless you pass a full `tokenUrl`; the client id and secret go to that host. It depends on `jose`.
+
+`issuer`, `jwksUri`, and `tokenUrl` must be `https:`; plain `http:` is accepted only on `localhost`, `*.localhost`, `127.0.0.0/8`, or `::1`. `jwksUri` and `tokenUrl` must have the same host and port as `issuer`. `createHandsal` and `createHandsalClient` throw otherwise. Two options relax this, and only for a host you trust:
+
+- A gateway on another host, for example `tokenUrl: "https://gateway.example.net/oauth2/token"`, needs `allowCrossOrigin: true`.
+- A Docker network address next to a public https issuer, for example `tokenUrl: "http://handsal:3000/t/acme/oauth/token"` or `jwksUri: "http://handsal:3000/t/acme/.well-known/jwks.json"`, needs both `allowInsecureHttp: true` and `allowCrossOrigin: true`.
+
+A username or password in the URL, or a scheme other than `http:` or `https:`, is always rejected.
 
 `scopes` is one scope or a list. Every listed scope must be on the token. Omit it to accept any valid token for this audience. A missing or invalid token is `401`. A valid token without the scope is `403`.
 
